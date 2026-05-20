@@ -8,6 +8,8 @@
 // @match        https://www.torn.com/bazaar.php*
 // @grant        none
 // @run-at       document-idle
+// @downloadURL https://update.greasyfork.org/scripts/579009/Torn%20Bazaar%20Auto-Confirm.user.js
+// @updateURL https://update.greasyfork.org/scripts/579009/Torn%20Bazaar%20Auto-Confirm.meta.js
 // ==/UserScript==
 
 (function () {

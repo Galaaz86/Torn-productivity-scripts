@@ -8,6 +8,8 @@
 // @match        https://www.torn.com/bazaar.php*
 // @grant        none
 // @run-at       document-idle
+// @downloadURL https://update.greasyfork.org/scripts/579010/Torn%20Bazaar%20Fill%20Max%20Auto-Buy.user.js
+// @updateURL https://update.greasyfork.org/scripts/579010/Torn%20Bazaar%20Fill%20Max%20Auto-Buy.meta.js
 // ==/UserScript==
 
 (function () {

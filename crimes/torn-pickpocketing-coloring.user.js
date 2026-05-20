@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Torn Pickpocketing Coloring
-// @version      0.5
+// @version      1.0.0
 // @namespace    https://www.torn.com/
 // @description  Color codes crimes based on difficulty
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=torn.com
