@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Pickpocketing Coloring
 // @version      0.5
-// @namespace    https://github.com/Galaaz86/Torn-Pickpocketing-Coloring
+// @namespace    https://www.torn.com/
 // @description  Color codes crimes based on difficulty
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=torn.com
 // @author       Korbrm [2931507] — fixed by Galaaz86 [4178341]
