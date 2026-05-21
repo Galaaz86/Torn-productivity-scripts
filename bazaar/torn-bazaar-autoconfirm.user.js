@@ -41,7 +41,7 @@
                 clearInterval(interval);
                 return;
             }
-            const successMsg = document.querySelector('[data-testid="success-message"]');
+            const successMsg = document.querySelector('[data-testid="success-message"][aria-label="Success"]');
             if (!successMsg) return;
             clearInterval(interval);
             successMsg.style.display = 'none';
