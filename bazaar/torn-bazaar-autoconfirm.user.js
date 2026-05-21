@@ -1,13 +1,15 @@
 // ==UserScript==
 // @name         Torn Bazaar Auto-Confirm
 // @namespace    https://www.torn.com/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Automatically clicks "Yes" on bazaar purchase confirmation dialogs
 // @author       Galaaz86 [4178341]
 // @license      MIT License
 // @match        https://www.torn.com/bazaar.php*
+// @match        https://www.torn.com/*
 // @grant        none
 // @run-at       document-idle
+// @all-frames   true
 // @downloadURL https://update.greasyfork.org/scripts/579009/Torn%20Bazaar%20Auto-Confirm.user.js
 // @updateURL https://update.greasyfork.org/scripts/579009/Torn%20Bazaar%20Auto-Confirm.meta.js
 // ==/UserScript==
@@ -28,7 +30,22 @@
 
         //console.log('[Torn Auto-Confirm] Clicking Yes on purchase dialog.');
         yesBtn.click();
+        waitForResultPopupAndDismiss();
         return true;
+    }
+
+    function waitForResultPopupAndDismiss() {
+        const start = Date.now();
+        const interval = setInterval(() => {
+            if (Date.now() - start > 3000) {
+                clearInterval(interval);
+                return;
+            }
+            const successMsg = document.querySelector('[data-testid="success-message"]');
+            if (!successMsg) return;
+            clearInterval(interval);
+            successMsg.style.display = 'none';
+        }, 100);
     }
 
     /**
