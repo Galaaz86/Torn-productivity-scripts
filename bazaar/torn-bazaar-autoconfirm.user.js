@@ -10,8 +10,6 @@
 // @grant        none
 // @run-at       document-idle
 // @all-frames   true
-// @downloadURL https://update.greasyfork.org/scripts/579009/Torn%20Bazaar%20Auto-Confirm.user.js
-// @updateURL https://update.greasyfork.org/scripts/579009/Torn%20Bazaar%20Auto-Confirm.meta.js
 // ==/UserScript==
 
 (function () {
