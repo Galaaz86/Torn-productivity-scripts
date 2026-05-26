@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn item Quality Viewer
 // @namespace    http://tampermonkey.net/
-// @version      1.0.2
+// @version      1.1.0
 // @description  This script gives players a quick visual guide to how good a weapon or armor roll is by color-coding the quality directly onto the item image with a heat map based font coloring.
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -102,7 +102,7 @@
   const AL_BUTTON_SELECTOR = 'button[class*="viewInfoButton"]';
 
   const BZ_ITEM_SELECTOR = 'div[data-testid="item"]';
-  const BZ_STATS_SELECTOR = ".infoBonuses___g8QdG";
+  const BZ_STATS_SELECTOR = '[class*="infoBonuses"]';
 
   const IP_TILE_SELECTOR = "ul.itemsList > li";
   const IP_NAME_SELECTOR = ".title-wrap .name";
@@ -358,7 +358,7 @@
   }
 
   function bzFindValue(statsBlock, label) {
-    const icon = statsBlock.querySelector(`i[area-label="${label}"], i[aria-label="${label}"]`);
+    const icon = statsBlock.querySelector(`i[aria-label="${label}"]`);
     if (!icon) return null;
     const container = icon.closest("div") || icon.parentElement;
     const valEl = container?.querySelector("span.t-overflow") || icon.nextElementSibling;
