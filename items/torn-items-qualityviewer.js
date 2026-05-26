@@ -1,11 +1,16 @@
 // ==UserScript==
 // @name         Torn item Quality Viewer
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.0.2
 // @description  This script gives players a quick visual guide to how good a weapon or armor roll is by color-coding the quality directly onto the item image with a heat map based font coloring.
 // @author       Galaaz86 [4178341]
 // @license      MIT License
+// @match        https://www.torn.com/page.php?sid=ItemMarket*
+// @match        https://www.torn.com/bazaar.php*
 // @match        https://www.torn.com/item.php*
+// @match        https://www.torn.com/dump.php*
+// @match        https://www.torn.com/factions.php*
+// @match        https://www.torn.com/amarket.php*
 // @run-at       document-idle
 // @grant        none
 // ==/UserScript==
@@ -93,6 +98,9 @@
   /** ==================== SELECTORS ==================== **/
   const IM_TILE_SELECTOR = "li.tt-highlight-modified";
 
+  const AL_TILE_SELECTOR = 'div[class*="virtualListing"]';
+  const AL_BUTTON_SELECTOR = 'button[class*="viewInfoButton"]';
+
   const BZ_ITEM_SELECTOR = 'div[data-testid="item"]';
   const BZ_STATS_SELECTOR = ".infoBonuses___g8QdG";
 
@@ -101,7 +109,7 @@
   const IP_NAME_SELECTOR_2 = ".title-wrap .name-wrap .t-overflow";
   const IP_CONT_WRAP_SELECTOR = ".cont-wrap";
 
-  const DP_TILE_SELECTOR = "ul.items-cont > li";
+  const DP_TILE_SELECTOR = "li[data-group='child']";
 
   const FA_TILE_SELECTOR = ".armoury-tabs ul.item-list > li";
 
@@ -458,11 +466,68 @@
     }
   }
 
+  function alGetRollStats(tile) {
+    // Stats appear as: <span aria-label="34.26 armor"> — parseFloat handles the trailing keyword
+    function parseAria(keyword) {
+      const el = tile.querySelector(`[aria-label*=" ${keyword}"]`);
+      if (!el) return null;
+      const val = parseFloat(el.getAttribute("aria-label") || "");
+      return Number.isFinite(val) ? val : null;
+    }
+    const damage   = parseAria("damage");
+    const accuracy = parseAria("accuracy");
+    const armor    = parseAria("armor");
+    return {
+      isWeapon: damage !== null && accuracy !== null,
+      isArmor:  armor  !== null && damage   === null,
+      damage, accuracy, armor
+    };
+  }
+
+  function recolorAddListing() {
+    for (const tile of document.querySelectorAll(AL_TILE_SELECTOR)) {
+      const itemId = getItemId(tile);
+      if (!itemId) continue;
+      const stats = alGetRollStats(tile);
+      if (!stats.isWeapon && !stats.isArmor) continue;
+      let pRaw = null;
+      if (stats.isWeapon) {
+        const base = WEAPON_BASE[itemId];
+        if (!base) continue;
+        pRaw = weaponHeatRaw(stats.damage, stats.accuracy, base);
+      } else {
+        const base = ARMOR_BASE[itemId];
+        if (!base) continue;
+        pRaw = armorHeatRaw(stats.armor, base);
+      }
+      if (pRaw === null) continue;
+      const color  = colorForHeat(quantizeHeat(toHeat(pRaw)));
+      const btn    = tile.querySelector(AL_BUTTON_SELECTOR);
+      const nameEl = btn?.querySelector("span.t-overflow");
+      upsertInlineLabel(nameEl, pRaw, color);
+    }
+  }
+
   function recolorDumpTrash() {
     for (const li of document.querySelectorAll(DP_TILE_SELECTOR)) {
       const itemId = getItemId(li);
       if (!itemId) continue;
-      applyBadge(li, genericGetRollStats(li), itemId);
+      const stats = genericGetRollStats(li);
+      if (!stats.isWeapon && !stats.isArmor) continue;
+      let pRaw = null;
+      if (stats.isWeapon) {
+        const base = WEAPON_BASE[itemId];
+        if (!base) continue;
+        pRaw = weaponHeatRaw(stats.damage, stats.accuracy, base);
+      } else {
+        const base = ARMOR_BASE[itemId];
+        if (!base) continue;
+        pRaw = armorHeatRaw(stats.armor, base);
+      }
+      if (pRaw === null) continue;
+      const color  = colorForHeat(quantizeHeat(toHeat(pRaw)));
+      const nameEl = li.querySelector(".title-wrap .name-wrap .t-overflow");
+      upsertInlineLabel(nameEl, pRaw, color);
     }
   }
 
@@ -487,13 +552,23 @@
   /** ==================== MAIN ==================== **/
   const PAGE = (() => {
     const h = window.location.href;
-    if (h.includes('item.php')) return 'itempage';
+    if (h.includes('page.php?sid=ItemMarket')) return 'itemmarket';
+    if (h.includes('bazaar.php'))              return 'bazaar';
+    if (h.includes('item.php'))                return 'itempage';
+    if (h.includes('dump.php'))                return 'dump';
+    if (h.includes('factions.php'))            return 'factions';
+    if (h.includes('amarket.php'))             return 'amarket';
     return 'unknown';
   })();
 
   function recolorAll() {
     try {
-      if (PAGE === 'itempage') recolorItemPage();
+      if      (PAGE === 'itemmarket') { recolorItemMarket(); recolorAddListing(); }
+      else if (PAGE === 'bazaar')     recolorBazaar();
+      else if (PAGE === 'itempage')   recolorItemPage();
+      else if (PAGE === 'dump')       recolorDumpTrash();
+      else if (PAGE === 'factions')   recolorFactionArmory();
+      else if (PAGE === 'amarket')    recolorAuctionMarket();
     } catch (e) {
       console.error("[Torn Heat] Script error:", e);
     }
