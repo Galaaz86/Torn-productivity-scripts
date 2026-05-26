@@ -1,11 +1,12 @@
 // ==UserScript==
-// @name         Torn Bazaar Confirm Helper
+// @name         Torn Confirm Helper
 // @namespace    https://www.torn.com/
-// @version      1.0.0
-// @description  Shows a full-screen click zone when a bazaar purchase dialog appears — left click to confirm, right click or Esc to cancel
+// @version      2.0.0
+// @description  Shows a full-screen click zone on purchase/sell confirmations — left click to confirm, right click or Esc to cancel
 // @author       Galaaz86 [4178341]
 // @license      MIT License
 // @match        https://www.torn.com/bazaar.php*
+// @match        https://www.torn.com/item.php*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -40,15 +41,32 @@
         }, 100);
     }
 
+    function findDialog() {
+        // Bazaar: React dialog
+        const bzDialog = document.querySelector('[data-testid="buy-confirmation"]');
+        if (bzDialog) {
+            const yesBtn = bzDialog.querySelector('button[aria-label="Yes"]');
+            const noBtn  = bzDialog.querySelector('button[aria-label="No"]');
+            if (yesBtn) return { dialog: bzDialog, yesBtn, noBtn };
+        }
+
+        // item.php: classic action-wrap shown via display:block
+        const actionWrap = document.querySelector('.action-wrap[style*="display: block"]');
+        if (actionWrap) {
+            const yesBtn = actionWrap.querySelector('a.next-act');
+            const noBtn  = actionWrap.querySelector('a.close-act');
+            if (yesBtn) return { dialog: actionWrap, yesBtn, noBtn };
+        }
+
+        return null;
+    }
+
     function createOverlay() {
         removeOverlay();
 
-        const dialog = document.querySelector('[data-testid="buy-confirmation"]');
-        if (!dialog) return;
-
-        const yesBtn = dialog.querySelector('button[aria-label="Yes"]');
-        const noBtn  = dialog.querySelector('button[aria-label="No"]');
-        if (!yesBtn) return;
+        const found = findDialog();
+        if (!found) return;
+        const { dialog, yesBtn, noBtn } = found;
 
         overlay = document.createElement('div');
         overlay.style.cssText = `
@@ -102,27 +120,42 @@
 
         document.body.appendChild(overlay);
 
-        // Remove overlay if the dialog closes on its own
+        // Remove overlay when dialog closes or hides
         dialogWatcher = new MutationObserver(() => {
-            if (!document.contains(dialog)) removeOverlay();
+            const still = findDialog();
+            if (!still || still.dialog !== dialog) removeOverlay();
         });
-        dialogWatcher.observe(document.body, { childList: true, subtree: true });
+        dialogWatcher.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
     }
 
     const observer = new MutationObserver(function (mutations) {
         for (const mutation of mutations) {
-            for (const node of mutation.addedNodes) {
-                if (node.nodeType !== Node.ELEMENT_NODE) continue;
-                if (
-                    node.matches?.('[data-testid="buy-confirmation"]') ||
-                    node.querySelector?.('[data-testid="buy-confirmation"]')
-                ) {
-                    setTimeout(createOverlay, 80);
-                    return;
+            // Bazaar: React injects the dialog as a new node
+            if (mutation.type === 'childList') {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                    if (
+                        node.matches?.('[data-testid="buy-confirmation"]') ||
+                        node.querySelector?.('[data-testid="buy-confirmation"]')
+                    ) {
+                        setTimeout(createOverlay, 80);
+                        return;
+                    }
+                }
+            }
+
+            // item.php: confirmation shown by toggling display:block on .action-wrap
+            if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+                const t = mutation.target;
+                if (t.classList?.contains('action-wrap') && t.style.display === 'block') {
+                    if (t.querySelector('a.next-act')) {
+                        setTimeout(createOverlay, 80);
+                        return;
+                    }
                 }
             }
         }
     });
 
-    observer.observe(document.body, { childList: true, subtree: true });
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] });
 })();
