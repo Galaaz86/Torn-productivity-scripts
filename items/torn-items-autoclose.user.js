@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Items Auto-Close
 // @namespace    https://www.torn.com/
-// @version      1.1.0
+// @version      1.2.0
 // @description  Automatically clicks "Close" after selling an item on the items page
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -19,6 +19,10 @@
 
         const isVisible = sellDialog.style.display === 'block';
         if (!isVisible) return;
+
+        // Confirm-helper sets this flag while cancelling to prevent a race where
+        // auto-close fires during the confirmation→form transition and double-clicks close-act.
+        if (sellDialog.dataset.tornCancelling) return;
 
         // The dialog cycles through three states: sell form (has inputs), confirmation
         // (has a.next-act = Yes button), and result (neither). Only close at the result step.

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Confirm Helper
 // @namespace    https://www.torn.com/
-// @version      2.0.0
+// @version      2.1.0
 // @description  Shows a full-screen click zone on purchase/sell confirmations — left click to confirm, right click or Esc to cancel
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -104,17 +104,20 @@
             waitForResultPopupAndDismiss();
         });
 
-        overlay.addEventListener('contextmenu', e => {
-            e.preventDefault();
+        function cancelConfirm() {
+            if (dialog) dialog.dataset.tornCancelling = '1';
             if (noBtn) noBtn.click();
             removeOverlay();
+            setTimeout(() => { if (dialog) delete dialog.dataset.tornCancelling; }, 700);
+        }
+
+        overlay.addEventListener('contextmenu', e => {
+            e.preventDefault();
+            cancelConfirm();
         });
 
         escHandler = e => {
-            if (e.key === 'Escape') {
-                if (noBtn) noBtn.click();
-                removeOverlay();
-            }
+            if (e.key === 'Escape') cancelConfirm();
         };
         document.addEventListener('keydown', escHandler);
 
