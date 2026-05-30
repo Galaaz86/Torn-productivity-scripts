@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Torn Cars Tracker</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: #1a1a1a;
+    color: #e0e0e0;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  h1 {
+    text-align: center;
+    font-size: 26px;
+    font-weight: 700;
+    color: #e8c84a;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .subtitle { text-align: center; color: #888; font-size: 13px; margin-bottom: 20px; }
+
+  .progress-section {
+    background: #252525;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 14px 20px;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .progress-label { font-size: 14px; color: #aaa; white-space: nowrap; }
+
+  .progress-bar-wrap { flex: 1; background: #333; border-radius: 20px; height: 14px; overflow: hidden; }
+
+  .progress-bar-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #e8c84a, #f0a020);
+    border-radius: 20px;
+    transition: width 0.3s ease;
+  }
+
+  .progress-count {
+    font-size: 14px;
+    font-weight: 600;
+    color: #e8c84a;
+    white-space: nowrap;
+    min-width: 60px;
+    text-align: right;
+  }
+
+  .class-stats { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+
+  .class-stat-chip { padding: 4px 12px; border-radius: 14px; font-size: 12px; font-weight: 600; }
+  .chip-E { background: #333; color: #bbb; }
+  .chip-D { background: #1e3a6e; color: #7eb3f0; }
+  .chip-C { background: #1a4030; color: #5dd49a; }
+  .chip-B { background: #4a2e0a; color: #f0a030; }
+  .chip-A { background: #4a0f0f; color: #f06060; }
+
+  .toolbar {
+    background: #252525;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .filter-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+  .filter-label { color: #888; font-size: 12px; width: 68px; flex-shrink: 0; }
+
+  .filter-btn {
+    padding: 4px 13px;
+    border-radius: 20px;
+    border: 1px solid #444;
+    background: #2a2a2a;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+
+  .filter-btn:hover { border-color: #e8c84a; color: #e8c84a; }
+  .filter-btn.active { background: #e8c84a; color: #1a1a1a; border-color: #e8c84a; font-weight: 600; }
+
+  .filter-btn.class-E { border-color: #666; }
+  .filter-btn.class-E.active { background: #777; border-color: #777; color: #fff; }
+  .filter-btn.class-D { border-color: #4a72b8; }
+  .filter-btn.class-D.active { background: #4a72b8; border-color: #4a72b8; color: #fff; }
+  .filter-btn.class-C { border-color: #3a9060; }
+  .filter-btn.class-C.active { background: #3a9060; border-color: #3a9060; color: #fff; }
+  .filter-btn.class-B { border-color: #c07a1a; }
+  .filter-btn.class-B.active { background: #c07a1a; border-color: #c07a1a; color: #fff; }
+  .filter-btn.class-A { border-color: #c03030; }
+  .filter-btn.class-A.active { background: #c03030; border-color: #c03030; color: #fff; }
+  .filter-btn.obt-yes.active { background: #2a7a3a; border-color: #2a7a3a; color: #fff; }
+  .filter-btn.obt-no.active  { background: #7a2a2a; border-color: #7a2a2a; color: #fff; }
+
+  .action-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding-top: 8px;
+    border-top: 1px solid #333;
+  }
+
+  .btn {
+    padding: 6px 16px;
+    border-radius: 6px;
+    border: 1px solid #555;
+    background: #2a2a2a;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+
+  .btn:hover { border-color: #e8c84a; color: #e8c84a; }
+  .btn.btn-save   { border-color: #3a7a4a; color: #5dd49a; }
+  .btn.btn-save:hover { background: #1e3a28; border-color: #5dd49a; }
+  .btn.btn-export { border-color: #3a4a7a; color: #7eb3f0; }
+  .btn.btn-export:hover { background: #1e2a4a; }
+  .btn.btn-import { border-color: #7a4a1a; color: #f0a060; }
+  .btn.btn-import:hover { background: #3a2010; border-color: #f0a060; }
+  .btn.btn-reset  { border-color: #555; color: #888; }
+  .btn.btn-reset:hover { border-color: #c03030; color: #e05050; }
+
+  .save-status {
+    font-size: 12px;
+    color: #5dd49a;
+    opacity: 0;
+    transition: opacity 0.4s;
+    margin-left: 4px;
+  }
+  .save-status.visible { opacity: 1; }
+
+  .csv-info {
+    font-size: 12px;
+    color: #666;
+    margin-left: auto;
+  }
+  .csv-info.linked { color: #5dd49a; }
+
+  /* Table */
+  .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #333; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+
+  thead th {
+    background: #2a2a2a;
+    color: #e8c84a;
+    padding: 11px 14px;
+    text-align: left;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    border-bottom: 2px solid #3a3a3a;
+  }
+
+  thead th:hover { color: #f0c030; }
+  thead th .sort-icon { margin-left: 4px; opacity: 0.4; font-size: 10px; }
+  thead th.sorted .sort-icon { opacity: 1; }
+  thead th:first-child, thead th:last-child { cursor: default; }
+
+  tbody tr { border-bottom: 1px solid #2d2d2d; transition: background 0.1s; }
+  tbody tr:hover { background: #232323; }
+  tbody tr.obtained { opacity: 0.4; }
+  tbody tr.obtained td.name-cell { text-decoration: line-through; color: #888; }
+  tbody tr.hidden-row { display: none; }
+
+  td { padding: 10px 14px; vertical-align: middle; }
+
+  .class-badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-weight: 700; font-size: 12px; }
+  .class-E .class-badge { background: #444; color: #bbb; }
+  .class-D .class-badge { background: #1e3a6e; color: #7eb3f0; }
+  .class-C .class-badge { background: #1a4030; color: #5dd49a; }
+  .class-B .class-badge { background: #4a2e0a; color: #f0a030; }
+  .class-A .class-badge { background: #4a0f0f; color: #f06060; }
+
+  .price { color: #a0d8a0; font-variant-numeric: tabular-nums; }
+  .price-na { color: #555; }
+  .location-cell { color: #aaa; font-size: 13px; }
+  .obtained-cell { text-align: center; }
+
+  .check-wrap {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+  .check-wrap:hover { background: #333; }
+  .check-wrap input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; accent-color: #e8c84a; }
+
+  .img-cell { width: 80px; text-align: center; padding: 6px 8px; }
+  .img-cell img {
+    height: 56px; width: 80px;
+    object-fit: contain;
+    display: block; margin: 0 auto;
+    border-radius: 4px; background: #111;
+    transition: opacity 0.2s;
+  }
+  tbody tr.obtained .img-cell img { opacity: 0.35; }
+</style>
+</head>
+<body>
+
+<h1>Torn Cars Tracker</h1>
+<p class="subtitle">Changes are kept in memory. Click <strong>Save</strong> to write to torn_cars.csv.</p>
+
+<div class="progress-section">
+  <span class="progress-label">Collection</span>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
+  </div>
+  <span class="progress-count" id="progressCount">0 / 50</span>
+</div>
+
+<div class="class-stats" id="classStats"></div>
+
+<div class="toolbar">
+  <div class="filter-row">
+    <span class="filter-label">Class:</span>
+    <button class="filter-btn active" data-group="class" data-val="all">All</button>
+    <button class="filter-btn class-E" data-group="class" data-val="E">E</button>
+    <button class="filter-btn class-D" data-group="class" data-val="D">D</button>
+    <button class="filter-btn class-C" data-group="class" data-val="C">C</button>
+    <button class="filter-btn class-B" data-group="class" data-val="B">B</button>
+    <button class="filter-btn class-A" data-group="class" data-val="A">A</button>
+  </div>
+  <div class="filter-row">
+    <span class="filter-label">Obtained:</span>
+    <button class="filter-btn active" data-group="obtained" data-val="all">All</button>
+    <button class="filter-btn obt-yes" data-group="obtained" data-val="yes">Obtained</button>
+    <button class="filter-btn obt-no"  data-group="obtained" data-val="no">Not obtained</button>
+  </div>
+  <div class="action-row">
+    <button class="btn btn-save"   id="saveBtn">Save</button>
+    <button class="btn btn-export" id="exportBtn">Export CSV</button>
+    <button class="btn btn-import" id="importBtn">Import CSV</button>
+    <input type="file" accept=".csv" id="importFile" style="display:none">
+    <button class="btn btn-reset"  id="resetBtn">Reset all</button>
+    <span class="save-status" id="saveStatus"></span>
+    <span class="csv-info" id="csvInfo">CSV not linked</span>
+  </div>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="cursor:default;width:88px;">Image</th>
+        <th data-col="name">Item <span class="sort-icon">&#9650;</span></th>
+        <th data-col="location">Location <span class="sort-icon">&#9650;</span></th>
+        <th data-col="class">Class <span class="sort-icon">&#9650;</span></th>
+        <th data-col="buy">Buy <span class="sort-icon">&#9650;</span></th>
+        <th data-col="sell">Sell <span class="sort-icon">&#9650;</span></th>
+        <th style="cursor:default;text-align:center;">Obtained</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+</div>
+
+<script>
+const STORAGE_KEY = 'torn_cars_obtained_v1';
+
+function imgSrc(id) { return `tornCarImages/${id}.png`; }
+
+const cars = [
+  { id: 'alpha_milano_156',    name: 'Alpha Milano 156',    location: 'Docks',                              cls: 'D', buy: 14000,  sell: 9000    },
+  { id: 'bavaria_m5',         name: 'Bavaria M5',           location: 'GTA 2 Crime',                        cls: 'B', buy: null,   sell: 43000   },
+  { id: 'bavaria_x5',         name: 'Bavaria X5',           location: 'Docks',                              cls: 'D', buy: 35000,  sell: 20000   },
+  { id: 'bavaria_z8',         name: 'Bavaria Z8',           location: 'GTA 2/3 Crime',                      cls: 'C', buy: null,   sell: 80000   },
+  { id: 'bedford_nova',       name: 'Bedford Nova',         location: 'GTA 3 Crime',                        cls: 'D', buy: null,   sell: 8500    },
+  { id: 'bedford_racer',      name: 'Bedford Racer',        location: 'Docks',                              cls: 'E', buy: 9000,   sell: 7000    },
+  { id: 'cagoutte_10_6',      name: 'Cagoutte 10-6',       location: 'Docks',                              cls: 'E', buy: 8000,   sell: 6500    },
+  { id: 'chevalier_cvr',      name: 'Chevalier CVR',        location: 'GTA 1/2 Crime',                      cls: 'D', buy: null,   sell: 5600    },
+  { id: 'chevalier_cz06',     name: 'Chevalier CZ06',       location: 'Docks & GTA 2 Crime',                cls: 'C', buy: 75000,  sell: 50000   },
+  { id: 'coche_basurero',     name: 'Coche Basurero',       location: 'Docks',                              cls: 'D', buy: 17500,  sell: 11000   },
+  { id: 'colina_tanprice',    name: 'Colina Tanprice',      location: 'GTA 2 Crime',                        cls: 'B', buy: null,   sell: 22000   },
+  { id: 'cosmos_ex',          name: 'Cosmos EX',            location: 'Docks',                              cls: 'B', buy: 40000,  sell: 19000   },
+  { id: 'dart_rampager',      name: 'Dart Rampager',        location: 'GTA 2/3 Crime',                      cls: 'B', buy: null,   sell: 69000   },
+  { id: 'echo_quadrato',      name: 'Echo Quadrato',        location: 'Docks & GTA 2/3 Crime',              cls: 'C', buy: 85000,  sell: 55000   },
+  { id: 'echo_r8',            name: 'Echo R8',              location: 'Mechanic Shop',                      cls: 'A', buy: null,   sell: 125000  },
+  { id: 'echo_s3',            name: 'Echo S3',              location: 'Racing Tournament Prize',            cls: 'C', buy: null,   sell: null    },
+  { id: 'echo_s4',            name: 'Echo S4',              location: 'GTA 2 Crime',                        cls: 'B', buy: null,   sell: 13000   },
+  { id: 'edomondo_acd',       name: 'Edomondo ACD',         location: 'GTA 1/2 Crime',                      cls: 'D', buy: null,   sell: 23000   },
+  { id: 'edomondo_ir',        name: 'Edomondo IR',          location: 'GTA 1/2 Crime',                      cls: 'C', buy: null,   sell: 15000   },
+  { id: 'edomondo_locale',    name: 'Edomondo Locale',      location: 'GTA 1/2 Crime',                      cls: 'E', buy: null,   sell: 9000    },
+  { id: 'edomondo_nsx',       name: 'Edomondo NSX',         location: 'GTA 1/2 Crime',                      cls: 'A', buy: null,   sell: 40000   },
+  { id: 'edomondo_s2',        name: 'Edomondo S2',          location: 'Docks',                              cls: 'C', buy: 40000,  sell: 21000   },
+  { id: 'invader_h3',         name: 'Invader H3',           location: 'GTA 1/2 Crime',                      cls: 'D', buy: null,   sell: 21000   },
+  { id: 'knight_firebrand',   name: 'Knight Firebrand',     location: 'GTA 2/3 Crime',                      cls: 'C', buy: null,   sell: 59000   },
+  { id: 'lambrini_torobravo', name: 'Lambrini Torobravo',   location: 'Currently Unobtainable',             cls: 'A', buy: null,   sell: 812500  },
+  { id: 'limoen_saxon',       name: 'Limoen Saxon',         location: 'GTA 2 Crime',                        cls: 'E', buy: null,   sell: 8000    },
+  { id: 'lolo_458',           name: 'Lolo 458',             location: 'GTA 3 Crime',                        cls: 'A', buy: null,   sell: 1075000 },
+  { id: 'mercia_slr',         name: 'Mercia SLR',           location: 'GTA 3 Crime',                        cls: 'A', buy: null,   sell: 1187500 },
+  { id: 'nano_cavalier',      name: 'Nano Cavalier',        location: 'GTA 2 Crime',                        cls: 'C', buy: null,   sell: 27000   },
+  { id: 'nano_pioneer',       name: 'Nano Pioneer',         location: 'Docks',                              cls: 'E', buy: 9500,   sell: 7500    },
+  { id: 'oceania_ss',         name: 'Oceania SS',           location: 'GTA 1/2 Crime',                      cls: 'C', buy: null,   sell: 25000   },
+  { id: 'papani_cole',        name: 'Papani Cole',          location: 'Docks & GTA 1 Crime',                cls: 'E', buy: 11000,  sell: 8000    },
+  { id: 'stalhog_860',        name: 'Stalhog 860',          location: 'GTA 1 Crime',                        cls: 'E', buy: null,   sell: 5500    },
+  { id: 'stormatti_casteon',  name: 'Stormatti Casteon',    location: 'Ultimate Racing Tournament Prize',   cls: 'A', buy: null,   sell: 1000000 },
+  { id: 'sturmfahrt_111',     name: 'Sturmfahrt 111',       location: 'Docks',                              cls: 'B', buy: 95000,  sell: 60000   },
+  { id: 'tabata_rm2',         name: 'Tabata RM2',           location: 'GTA 1/2 Crime',                      cls: 'D', buy: null,   sell: 29000   },
+  { id: 'trident',            name: 'Trident',              location: 'GTA 1/2 Crime',                      cls: 'E', buy: null,   sell: 7000    },
+  { id: 'tsubasa_impressor',  name: 'Tsubasa Impressor',    location: 'Docks',                              cls: 'B', buy: 55000,  sell: 28000   },
+  { id: 'veloria_lfa',        name: 'Veloria LFA',          location: 'GTA 3 Crime',                        cls: 'A', buy: null,   sell: 875000  },
+  { id: 'verpestung_insecta', name: 'Verpestung Insecta',   location: 'GTA 1/2 Crime',                      cls: 'D', buy: null,   sell: 7600    },
+  { id: 'verpestung_sport',   name: 'Verpestung Sport',     location: 'Docks',                              cls: 'D', buy: 12500,  sell: 7300    },
+  { id: 'vita_bravo',         name: 'Vita Bravo',           location: 'GTA Crime (?)',                      cls: 'E', buy: null,   sell: 8000    },
+  { id: 'volt_gt',            name: 'Volt GT',              location: 'Mechanic Shop & GTA 2 Crime',        cls: 'A', buy: null,   sell: 150000  },
+  { id: 'volt_mng',           name: 'Volt MNG',             location: 'Docks & GTA 1/2 Crime',             cls: 'B', buy: 38000,  sell: 17000   },
+  { id: 'volt_rs',            name: 'Volt RS',              location: 'Docks',                              cls: 'C', buy: 55000,  sell: 30000   },
+  { id: 'weston_marlin_177',  name: 'Weston Marlin 177',    location: 'Mechanic Shop',                      cls: 'A', buy: null,   sell: 937500  },
+  { id: 'wington_ggu',        name: 'Wington GGU',          location: 'GTA 2 Crime',                        cls: 'B', buy: null,   sell: 32000   },
+  { id: 'yotsuhada_evx',      name: 'Yotsuhada EVX',        location: 'GTA Crime (?)',                      cls: 'B', buy: null,   sell: 27000   },
+  { id: 'zaibatsu_gtr',       name: 'Zaibatsu GT-R',        location: 'GTA 3 Crime',                        cls: 'A', buy: null,   sell: 87500   },
+  { id: 'zaibatsu_macro',     name: 'Zaibatsu Macro',       location: 'GTA 1 Crime',                        cls: 'E', buy: null,   sell: 7500    },
+];
+
+// ---- State ----
+let obtained       = {};
+let filterClass    = 'all';
+let filterObtained = 'all';
+let sortCol        = 'name';
+let sortAsc        = true;
+let csvFileHandle  = null; // persisted in IndexedDB
+
+// ---- IndexedDB ----
+async function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('torn_cars_db', 2);
+    req.onupgradeneeded = e => {
+      if (!e.target.result.objectStoreNames.contains('handles'))
+        e.target.result.createObjectStore('handles');
+    };
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = () => reject(req.error);
+  });
+}
+async function dbGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction('handles').objectStore('handles').get(key);
+    req.onsuccess = () => resolve(req.result ?? null);
+    req.onerror   = () => reject(req.error);
+  });
+}
+async function dbSet(key, val) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('handles', 'readwrite');
+    tx.objectStore('handles').put(val, key);
+    tx.oncomplete = resolve;
+    tx.onerror    = () => reject(tx.error);
+  });
+}
+
+// ---- CSV ----
+function buildCSV() {
+  const rows = ['id,name,class,location,buy,sell,obtained'];
+  cars.forEach(c => {
+    rows.push(`${c.id},"${c.name}",${c.cls},"${c.location}",${c.buy ?? ''},${c.sell ?? ''},${!!obtained[c.id]}`);
+  });
+  return rows.join('\r\n');
+}
+
+function parseCSV(text) {
+  const lines  = text.trim().split(/\r?\n/);
+  const cols   = lines[0].toLowerCase().split(',');
+  const idIdx  = cols.indexOf('id');
+  const obtIdx = cols.indexOf('obtained');
+  if (idIdx < 0 || obtIdx < 0) return;
+  obtained = {};
+  for (let i = 1; i < lines.length; i++) {
+    const parts = lines[i].split(',');
+    const id    = parts[idIdx]?.replace(/"/g, '').trim();
+    const got   = parts[obtIdx]?.replace(/"/g, '').trim().toLowerCase();
+    if (id && got === 'true') obtained[id] = true;
+  }
+}
+
+// ---- File handle ----
+function setCsvInfo(text, linked) {
+  const el = document.getElementById('csvInfo');
+  el.textContent = text;
+  el.className = 'csv-info' + (linked ? ' linked' : '');
+}
+
+async function loadFromCSV() {
+  // Try to read from stored file handle silently on page load
+  if (!('showOpenFilePicker' in window)) return;
+  try {
+    csvFileHandle = await dbGet('csvFile');
+    if (!csvFileHandle) return;
+    const perm = await csvFileHandle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      setCsvInfo('torn_cars.csv (click Save to reconnect)', false);
+      return;
+    }
+    const text = await (await csvFileHandle.getFile()).text();
+    parseCSV(text);
+    setCsvInfo('torn_cars.csv', true);
+  } catch (e) {
+    csvFileHandle = null;
+    console.warn('Load from CSV failed:', e);
+  }
+}
+
+async function saveToCSV() {
+  if (!('showOpenFilePicker' in window)) {
+    // Fallback: download
+    const url = URL.createObjectURL(new Blob([buildCSV()], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), { href: url, download: 'torn_cars.csv' }).click();
+    URL.revokeObjectURL(url);
+    flash('Downloaded!');
+    return;
+  }
+
+  // If we don't have a valid handle, open the file picker
+  if (!csvFileHandle) {
+    try {
+      const [fh] = await window.showOpenFilePicker({
+        types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'], 'text/plain': ['.csv'] } }],
+      });
+      const perm = await fh.requestPermission({ mode: 'readwrite' });
+      if (perm !== 'granted') return;
+      csvFileHandle = fh;
+      await dbSet('csvFile', fh);
+    } catch (e) {
+      if (e.name !== 'AbortError') console.error(e);
+      return;
+    }
+  }
+
+  // Check / re-request permission if needed
+  const perm = await csvFileHandle.queryPermission({ mode: 'readwrite' });
+  if (perm !== 'granted') {
+    const req = await csvFileHandle.requestPermission({ mode: 'readwrite' });
+    if (req !== 'granted') return;
+  }
+
+  try {
+    const w = await csvFileHandle.createWritable();
+    await w.write(buildCSV());
+    await w.close();
+    setCsvInfo('torn_cars.csv', true);
+    flash('Saved!');
+  } catch (e) {
+    console.error('Save failed:', e);
+  }
+}
+
+// ---- Flash message ----
+function flash(msg) {
+  const el = document.getElementById('saveStatus');
+  el.textContent = msg;
+  el.classList.add('visible');
+  setTimeout(() => el.classList.remove('visible'), 2000);
+}
+
+// ---- Render ----
+function fmt(n) {
+  if (n === null) return '<span class="price-na">N/A</span>';
+  return '<span class="price">$' + n.toLocaleString() + '</span>';
+}
+
+function classOrder(c) { return { E: 0, D: 1, C: 2, B: 3, A: 4 }[c] ?? -1; }
+
+function isVisible(car) {
+  const got = !!obtained[car.id];
+  if (filterClass !== 'all' && car.cls !== filterClass) return false;
+  if (filterObtained === 'yes' && !got) return false;
+  if (filterObtained === 'no'  &&  got) return false;
+  return true;
+}
+
+function getSorted() {
+  return [...cars].sort((a, b) => {
+    let va, vb;
+    if      (sortCol === 'name')     { va = a.name.toLowerCase();     vb = b.name.toLowerCase(); }
+    else if (sortCol === 'class')    { va = classOrder(a.cls);         vb = classOrder(b.cls); }
+    else if (sortCol === 'buy')      { va = a.buy  ?? -1;              vb = b.buy  ?? -1; }
+    else if (sortCol === 'sell')     { va = a.sell ?? -1;              vb = b.sell ?? -1; }
+    else if (sortCol === 'location') { va = a.location.toLowerCase();  vb = b.location.toLowerCase(); }
+    else return 0;
+    return va < vb ? (sortAsc ? -1 : 1) : va > vb ? (sortAsc ? 1 : -1) : 0;
+  });
+}
+
+function renderTable() {
+  const tbody = document.getElementById('tableBody');
+  tbody.innerHTML = getSorted().map(car => {
+    const got  = !!obtained[car.id];
+    const hide = isVisible(car) ? '' : 'hidden-row';
+    return `<tr class="class-${car.cls} ${got ? 'obtained' : ''} ${hide}" data-id="${car.id}">
+      <td class="img-cell"><img src="${imgSrc(car.id)}" alt="${car.name}" loading="lazy"></td>
+      <td class="name-cell">${car.name}</td>
+      <td class="location-cell">${car.location}</td>
+      <td><span class="class-badge">Class ${car.cls}</span></td>
+      <td>${fmt(car.buy)}</td>
+      <td>${fmt(car.sell)}</td>
+      <td class="obtained-cell">
+        <label class="check-wrap">
+          <input type="checkbox" data-id="${car.id}" ${got ? 'checked' : ''}>
+        </label>
+      </td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const id = e.target.dataset.id;
+      if (e.target.checked) obtained[id] = true;
+      else delete obtained[id];
+      updateProgress();
+      renderTable();
+    });
+  });
+}
+
+function updateProgress() {
+  const total = cars.length;
+  const done  = Object.keys(obtained).length;
+  document.getElementById('progressFill').style.width = Math.round(done / total * 100) + '%';
+  document.getElementById('progressCount').textContent = `${done} / ${total}`;
+  document.getElementById('classStats').innerHTML = ['E','D','C','B','A'].map(cls => {
+    const all = cars.filter(c => c.cls === cls);
+    const got = all.filter(c => obtained[c.id]);
+    return `<span class="class-stat-chip chip-${cls}">Class ${cls}: ${got.length}/${all.length}</span>`;
+  }).join('');
+}
+
+function updateSortHeaders() {
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.classList.remove('sorted');
+    th.querySelector('.sort-icon').innerHTML = '&#9650;';
+    if (th.dataset.col === sortCol) {
+      th.classList.add('sorted');
+      th.querySelector('.sort-icon').innerHTML = sortAsc ? '&#9650;' : '&#9660;';
+    }
+  });
+}
+
+// ---- Button handlers ----
+document.getElementById('saveBtn').addEventListener('click', saveToCSV);
+
+document.getElementById('exportBtn').addEventListener('click', async () => {
+  const csv = buildCSV();
+  if ('showSaveFilePicker' in window) {
+    try {
+      const fh = await window.showSaveFilePicker({
+        suggestedName: 'torn_cars.csv',
+        types: [{ description: 'CSV', accept: { 'text/csv': ['.csv'] } }],
+      });
+      const w = await fh.createWritable();
+      await w.write(csv); await w.close();
+      flash('Exported!');
+    } catch (e) { if (e.name !== 'AbortError') console.error(e); }
+  } else {
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    Object.assign(document.createElement('a'), { href: url, download: 'torn_cars.csv' }).click();
+    URL.revokeObjectURL(url);
+    flash('Exported!');
+  }
+});
+
+document.getElementById('resetBtn').addEventListener('click', () => {
+  if (confirm('Reset all obtained checkboxes?')) {
+    obtained = {};
+    updateProgress();
+    renderTable();
+  }
+});
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+
+document.getElementById('importFile').addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    parseCSV(ev.target.result);
+    setCsvInfo(file.name, true);
+    updateProgress();
+    renderTable();
+    flash('Imported!');
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+document.querySelectorAll('.filter-btn[data-group]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const group = btn.dataset.group;
+    document.querySelectorAll(`.filter-btn[data-group="${group}"]`).forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (group === 'class')    filterClass    = btn.dataset.val;
+    if (group === 'obtained') filterObtained = btn.dataset.val;
+    renderTable();
+  });
+});
+
+document.querySelectorAll('thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    if (sortCol === th.dataset.col) sortAsc = !sortAsc;
+    else { sortCol = th.dataset.col; sortAsc = true; }
+    updateSortHeaders();
+    renderTable();
+  });
+});
+
+// ---- Init ----
+updateSortHeaders();
+loadFromCSV().then(() => {
+  renderTable();
+  updateProgress();
+});
+</script>
+</body>
+</html>
