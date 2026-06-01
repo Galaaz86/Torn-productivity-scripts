@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn item Quality Viewer
 // @namespace    http://tampermonkey.net/
-// @version      1.1.0
+// @version      1.2.2
 // @description  This script gives players a quick visual guide to how good a weapon or armor roll is by color-coding the quality directly onto the item image with a heat map based font coloring.
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -96,7 +96,8 @@
   const HEAT_MAX = 1.00;
 
   /** ==================== SELECTORS ==================== **/
-  const IM_TILE_SELECTOR = "li.tt-highlight-modified";
+  const IM_TILE_SELECTOR        = "li.tt-highlight-modified";
+  const IM_SEARCH_TILE_SELECTOR = 'div[class*="itemTile___"]';
 
   const AL_TILE_SELECTOR = 'div[class*="virtualListing"]';
   const AL_BUTTON_SELECTOR = 'button[class*="viewInfoButton"]';
@@ -167,6 +168,21 @@
     return clamp(rawP, 0, HEAT_MAX);
   }
 
+  /** ==================== MARKET URL BUILDER ==================== **/
+  function buildMarketUrl(itemId, stats) {
+    const base = 'https://www.torn.com/page.php?sid=ItemMarket#/market/view=search';
+    if (stats.isWeapon && stats.damage !== null && stats.accuracy !== null) {
+      const d = Math.floor(stats.damage);
+      const a = Math.floor(stats.accuracy);
+      return `${base}&itemID=${itemId}&sortField=price&sortOrder=ASC&damageFrom=${d}&damageTo=100&accuracyFrom=${a}&accuracyTo=100`;
+    }
+    if (stats.isArmor && stats.armor !== null) {
+      const arm = Math.floor(stats.armor);
+      return `${base}&itemID=${itemId}&sortField=price&sortOrder=ASC&armorFrom=${arm}&armorTo=100`;
+    }
+    return null;
+  }
+
   /** ==================== ITEM ID EXTRACTION ==================== **/
   function getItemId(root) {
     // item.php / dump.php: li has data-item attribute
@@ -189,8 +205,11 @@
   }
 
   /** ==================== BADGE ==================== **/
-  const BADGE_CLASS = "torn-heat-quality-badge";
-  const LABEL_CLASS = "tt-quality-inline-label";
+  const BADGE_CLASS       = "torn-heat-quality-badge";
+  const BADGE_TEXT_CLASS  = "torn-heat-badge-text";
+  const LABEL_CLASS       = "tt-quality-inline-label";
+  const MONEYBAG_CLASS    = "torn-heat-market-btn";
+  const BZ_MONEYBAG_CLASS = "torn-heat-bz-market-row";
   let cssInjected = false;
 
   function injectCSSOnce() {
@@ -204,7 +223,7 @@
         top: 4px;
         left: 4px;
         z-index: 10;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 900;
         line-height: 1;
         padding: 3px 6px;
@@ -219,6 +238,23 @@
         font-size: 11px;
         font-weight: bold;
         margin-left: 5px;
+        vertical-align: middle;
+      }
+      .${MONEYBAG_CLASS} {
+        cursor: pointer;
+        text-decoration: none;
+        pointer-events: auto;
+        opacity: 0.85;
+        display: inline-block;
+        vertical-align: middle;
+        line-height: 1;
+        font-size: 13px;
+        margin-left: 4px;
+        transition: opacity 0.15s, transform 0.15s;
+      }
+      .${MONEYBAG_CLASS}:hover {
+        opacity: 1;
+        transform: scale(1.2);
       }
     `;
     document.head.appendChild(style);
@@ -256,21 +292,98 @@
       badge.className = BADGE_CLASS;
       anchor.appendChild(badge);
     }
-    badge.textContent = formatBadgeTextFromRaw(pRaw);
-    badge.style.color = color;
+    // Use a child span for the text so prepending the moneybag doesn't get wiped
+    let textSpan = badge.querySelector(`.${BADGE_TEXT_CLASS}`);
+    if (!textSpan) {
+      textSpan = document.createElement("span");
+      textSpan.className = BADGE_TEXT_CLASS;
+      badge.appendChild(textSpan);
+    }
+    textSpan.textContent = formatBadgeTextFromRaw(pRaw);
+    textSpan.style.color = color;
+  }
+
+  function upsertBadgeMoneybag(anchor, url) {
+    if (!anchor || !url) return;
+    const badge = anchor.querySelector(`.${BADGE_CLASS}`);
+    if (!badge) return;
+    badge.style.pointerEvents = 'auto';
+    let btn = badge.querySelector(`.${MONEYBAG_CLASS}`);
+    if (!btn) {
+      btn = document.createElement('a');
+      btn.className = MONEYBAG_CLASS;
+      btn.textContent = '💰';
+      btn.title = 'Search Item Market for this stat range';
+      badge.insertBefore(btn, badge.firstChild);
+    }
+    btn.href = url;
+    btn.target = '_blank';
+    btn.rel = 'noopener noreferrer';
   }
 
   function upsertInlineLabel(nameEl, pRaw, color) {
-    if (!nameEl) return;
+    if (!nameEl) return null;
     injectCSSOnce();
-    let label = nameEl.nextElementSibling;
-    if (!label || !label.classList.contains(LABEL_CLASS)) {
+    // Scan siblings rather than only checking the immediate next sibling,
+    // so re-renders still find the label after the moneybag has been inserted between them
+    let label = null;
+    let sib = nameEl.nextElementSibling;
+    while (sib) {
+      if (sib.classList.contains(LABEL_CLASS)) { label = sib; break; }
+      sib = sib.nextElementSibling;
+    }
+    if (!label) {
       label = document.createElement("span");
       label.className = LABEL_CLASS;
       nameEl.after(label);
     }
     label.textContent = formatBadgeTextFromRaw(pRaw);
     label.style.color = color;
+    return label;
+  }
+
+  function upsertInlineMoneybag(labelEl, url) {
+    if (!labelEl || !url) return;
+    // Insert/update the moneybag link directly after the quality label
+    let btn = labelEl.nextElementSibling;
+    if (!btn || !btn.classList.contains(MONEYBAG_CLASS)) {
+      btn = document.createElement('a');
+      btn.className = MONEYBAG_CLASS;
+      btn.textContent = '💰';
+      btn.title = 'Search Item Market for this stat range';
+      labelEl.after(btn);
+    }
+    btn.href = url;
+    btn.target = '_blank';
+    btn.rel = 'noopener noreferrer';
+  }
+
+  function upsertBazaarMoneybag(itemEl, url) {
+    if (!url) return;
+    const desc = itemEl.querySelector('[data-testid="description"]');
+    if (!desc) return;
+
+    // Clean up old-style wrapper div from previous renders
+    desc.querySelector(`.${BZ_MONEYBAG_CLASS}`)?.remove();
+
+    // Target the "(X in stock)" paragraph - use partial class match for CSS-module resilience
+    const amountEl = desc.querySelector('[class*="amount___"]');
+    if (!amountEl) return;
+
+    // Ensure the paragraph is visible (Torn hides it when stock info isn't loaded yet)
+    if (amountEl.style.display === 'none') amountEl.style.display = '';
+
+    let btn = amountEl.querySelector(`.${MONEYBAG_CLASS}`);
+    if (!btn) {
+      btn = document.createElement('a');
+      btn.className = MONEYBAG_CLASS;
+      btn.textContent = '💰';
+      btn.title = 'Search Item Market for this stat range';
+      amountEl.appendChild(btn);
+    }
+    btn.href = url;
+    btn.target = '_blank';
+    btn.rel = 'noopener noreferrer';
   }
 
   function findImageAnchor(root) {
@@ -358,7 +471,8 @@
   }
 
   function bzFindValue(statsBlock, label) {
-    const icon = statsBlock.querySelector(`i[aria-label="${label}"]`);
+    // Torn bazaar uses the non-standard "area-label" attribute instead of "aria-label"
+    const icon = statsBlock.querySelector(`i[area-label="${label}"], i[aria-label="${label}"]`);
     if (!icon) return null;
     const container = icon.closest("div") || icon.parentElement;
     const valEl = container?.querySelector("span.t-overflow") || icon.nextElementSibling;
@@ -426,6 +540,19 @@
     for (const tile of document.querySelectorAll(IM_TILE_SELECTOR)) {
       const itemId = getItemId(tile);
       if (!itemId) continue;
+      const stats = imGetRollStats(tile);
+      applyBadge(tile, stats, itemId);
+      if (stats.isWeapon || stats.isArmor) {
+        const anchor = findImageAnchor(tile);
+        if (anchor) upsertBadgeMoneybag(anchor, buildMarketUrl(itemId, stats));
+      }
+    }
+  }
+
+  function recolorItemMarketSearch() {
+    for (const tile of document.querySelectorAll(IM_SEARCH_TILE_SELECTOR)) {
+      const itemId = getItemId(tile);
+      if (!itemId) continue;
       applyBadge(tile, imGetRollStats(tile), itemId);
     }
   }
@@ -437,6 +564,7 @@
       const stats = bzGetRollStats(itemEl);
       if (!stats.isWeapon && !stats.isArmor) continue;
       applyBadge(itemEl, stats, itemId);
+      upsertBazaarMoneybag(itemEl, buildMarketUrl(itemId, stats));
     }
   }
 
@@ -460,9 +588,10 @@
       }
       if (pRaw === null) continue;
 
-      const color = colorForHeat(quantizeHeat(toHeat(pRaw)));
-      const nameEl = li.querySelector(IP_NAME_SELECTOR_2) || li.querySelector(IP_NAME_SELECTOR);
-      upsertInlineLabel(nameEl, pRaw, color);
+      const color   = colorForHeat(quantizeHeat(toHeat(pRaw)));
+      const nameEl  = li.querySelector(IP_NAME_SELECTOR_2) || li.querySelector(IP_NAME_SELECTOR);
+      const labelEl = upsertInlineLabel(nameEl, pRaw, color);
+      upsertInlineMoneybag(labelEl, buildMarketUrl(itemId, stats));
     }
   }
 
@@ -501,10 +630,11 @@
         pRaw = armorHeatRaw(stats.armor, base);
       }
       if (pRaw === null) continue;
-      const color  = colorForHeat(quantizeHeat(toHeat(pRaw)));
-      const btn    = tile.querySelector(AL_BUTTON_SELECTOR);
-      const nameEl = btn?.querySelector("span.t-overflow");
-      upsertInlineLabel(nameEl, pRaw, color);
+      const color   = colorForHeat(quantizeHeat(toHeat(pRaw)));
+      const viewBtn = tile.querySelector(AL_BUTTON_SELECTOR);
+      const nameEl  = viewBtn?.querySelector("span.t-overflow");
+      const labelEl = upsertInlineLabel(nameEl, pRaw, color);
+      upsertInlineMoneybag(labelEl, buildMarketUrl(itemId, stats));
     }
   }
 
@@ -563,7 +693,7 @@
 
   function recolorAll() {
     try {
-      if      (PAGE === 'itemmarket') { recolorItemMarket(); recolorAddListing(); }
+      if      (PAGE === 'itemmarket') { recolorItemMarket(); recolorAddListing(); recolorItemMarketSearch(); }
       else if (PAGE === 'bazaar')     recolorBazaar();
       else if (PAGE === 'itempage')   recolorItemPage();
       else if (PAGE === 'dump')       recolorDumpTrash();
