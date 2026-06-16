@@ -1,17 +1,21 @@
 // ==UserScript==
 // @name         Torn item Quality Viewer
 // @namespace    http://tampermonkey.net/
-// @version      1.2.2
+// @version      1.3.14
 // @description  This script gives players a quick visual guide to how good a weapon or armor roll is by color-coding the quality directly onto the item image with a heat map based font coloring.
 // @author       Galaaz86 [4178341]
 // @license      MIT License
 // @match        https://www.torn.com/page.php?sid=ItemMarket*
 // @match        https://www.torn.com/bazaar.php*
+// @match        https://www.torn.com/bigalgunshop.php*
 // @match        https://www.torn.com/item.php*
 // @match        https://www.torn.com/dump.php*
 // @match        https://www.torn.com/factions.php*
 // @match        https://www.torn.com/amarket.php*
 // @run-at       document-idle
+// @grant        GM_xmlhttpRequest
+// @grant        GM_getValue
+// @grant        GM_setValue
 // @grant        none
 // ==/UserScript==
 
@@ -20,6 +24,110 @@
 
 	if (window.__TORN_HEAT_RUNNING__) return;
 	window.__TORN_HEAT_RUNNING__ = true;
+
+	/** ==================== MARKET PRICE CACHE ==================== **/
+	const PRICE_CACHE_KEY = 'TORN_ITEM_PRICES';
+	const PRICE_CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+	let pricesCache = {};
+
+	async function fetchItemPrices() {
+		try {
+			const cached = GM_getValue(PRICE_CACHE_KEY);
+			if (cached && Date.now() - cached.timestamp < PRICE_CACHE_DURATION) {
+				pricesCache = cached.data;
+				return pricesCache;
+			}
+			let prices = await fetchFromItemMarket();
+			if (Object.keys(prices).length === 0) {
+				prices = await fetchFromBazaar();
+			}
+			if (Object.keys(prices).length > 0) {
+				GM_setValue(PRICE_CACHE_KEY, { data: prices, timestamp: Date.now() });
+				pricesCache = prices;
+			}
+			return prices;
+		} catch (e) {
+			console.error('[Torn Heat] Error fetching prices:', e);
+			return {};
+		}
+	}
+
+	function fetchFromItemMarket() {
+		return new Promise((resolve) => {
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://www.torn.com/page.php?sid=ItemMarket',
+				timeout: 5000,
+				onload: function(response) {
+					resolve(extractPrices(response.responseText));
+				},
+				onerror: () => resolve({}),
+				ontimeout: () => resolve({})
+			});
+		});
+	}
+
+	function fetchFromBazaar() {
+		return new Promise((resolve) => {
+			GM_xmlhttpRequest({
+				method: 'GET',
+				url: 'https://www.torn.com/bazaar.php',
+				timeout: 5000,
+				onload: function(response) {
+					resolve(extractPrices(response.responseText));
+				},
+				onerror: () => resolve({}),
+				ontimeout: () => resolve({})
+			});
+		});
+	}
+
+	function extractPrices(html) {
+		const prices = {};
+		const parser = new DOMParser();
+		const doc = parser.parseFromString(html, 'text/html');
+		const priceElements = doc.querySelectorAll('[data-item]');
+		priceElements.forEach(el => {
+			const itemId = el.getAttribute('data-item');
+			let priceEl = el.querySelector('.tt-item-price');
+			if (!priceEl) priceEl = el.querySelector('[class*="price"]');
+			if (itemId && priceEl) {
+				const priceText = priceEl.textContent.trim();
+				const price = priceText.replace(/[$,\s]/g, '');
+				if (!isNaN(price)) prices[itemId] = price;
+			}
+		});
+		const listItems = doc.querySelectorAll('li[data-item], li[data-rowkey]');
+		listItems.forEach(li => {
+			let itemId = li.getAttribute('data-item');
+			if (!itemId) {
+				const dataRowkey = li.getAttribute('data-rowkey');
+				if (dataRowkey) itemId = dataRowkey.match(/f?(\d+)/)?.[1];
+			}
+			const priceEl = li.querySelector('.tt-item-price, [class*="price"]');
+			if (itemId && priceEl) {
+				const priceText = priceEl.textContent.trim();
+				const price = priceText.replace(/[$,\s]/g, '');
+				if (!isNaN(price) && price) prices[itemId] = price;
+			}
+		});
+		return prices;
+	}
+
+	function formatPrice(price) {
+		return '$' + Number(price).toLocaleString();
+	}
+
+	function addPriceToElement(element, itemId) {
+		if (!element || !pricesCache[itemId]) return;
+		if (element.querySelector('.torn-dump-price')) return;
+		const price = formatPrice(pricesCache[itemId]);
+		const priceEl = document.createElement('span');
+		priceEl.className = 'torn-dump-price';
+		priceEl.style.cssText = 'color: #2e7d32; font-weight: bold; margin-left: 6px;';
+		priceEl.textContent = price;
+		element.appendChild(priceEl);
+	}
 
 	/** ==================== BASE STAT DATA (by item ID) ==================== **/
 	// Source: OpenMarket script by https://www.torn.com/forums.php#p=threads&f=67&t=16469095
@@ -103,7 +211,8 @@
 	const AL_BUTTON_SELECTOR = 'button[class*="viewInfoButton"]';
 
 	const BZ_ITEM_SELECTOR = 'div[data-testid="item"]';
-	const BZ_STATS_SELECTOR = '[class*="infoBonuses"]';
+	const BZ_ADD_ITEM_SELECTOR = 'ul.items-cont li.clearfix[data-group="child"]';
+	const BZ_STATS_SELECTOR = '[class*="infoBonuses"], .bonuses-wrap';
 
 	const IP_TILE_SELECTOR = "ul.itemsList > li";
 	const IP_NAME_SELECTOR = ".title-wrap .name";
@@ -116,6 +225,7 @@
 
 	const AM_TILE_SELECTOR = "div.item-cont-wrap";
 	const AM_STATS_WRAP_SELECTOR = ".item-bonuses";
+	const BIGAL_TILE_SELECTOR = 'li[data-item], li[data-rowkey]';
 
 	/** ==================== UTILS ==================== **/
 	function safeText(el) { return (el?.textContent || "").trim(); }
@@ -185,9 +295,14 @@
 
 	/** ==================== ITEM ID EXTRACTION ==================== **/
 	function getItemId(root) {
-	// item.php / dump.php: li has data-item attribute
+	// item.php / dump.php / item market rows: li has data-item attribute
 	if (root.dataset?.item) return root.dataset.item;
-	// fallback: extract from image URL /images/items/{id}/
+	// Big Al and other list rows may use data-rowkey instead
+	const rowKey = root.dataset?.rowkey || root.getAttribute?.('data-rowkey');
+	if (rowKey) {
+		const m = rowKey.match(/f?(\d+)/);
+		if (m) return m[1];
+	}
 	const img = root.querySelector('img[src*="/images/items/"]');
 	const m = img?.src.match(/\/images\/items\/(\d+)\//);
 	return m ? m[1] : null;
@@ -234,10 +349,19 @@
 		user-select: none;
 		white-space: nowrap;
 	  }
+	  .tt-quality-inline-wrap {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		margin-left: 6px;
+		vertical-align: middle;
+		flex: none;
+		order: 1000;
+	  }
 	  .${LABEL_CLASS} {
 		font-size: 11px;
 		font-weight: bold;
-		margin-left: 5px;
+		margin: 0;
 		vertical-align: middle;
 	  }
 	  .${MONEYBAG_CLASS} {
@@ -324,18 +448,33 @@
 	function upsertInlineLabel(nameEl, pRaw, color) {
 	if (!nameEl) return null;
 	injectCSSOnce();
-	// Scan siblings rather than only checking the immediate next sibling,
-	// so re-renders still find the label after the moneybag has been inserted between them
-	let label = null;
-	let sib = nameEl.nextElementSibling;
-	while (sib) {
-	  if (sib.classList.contains(LABEL_CLASS)) { label = sib; break; }
-	  sib = sib.nextElementSibling;
+	const nameWrap = nameEl.closest('.name-wrap') || nameEl.parentElement;
+	if (!nameWrap) return null;
+
+	// Prefer inserting into the containing title area so we don't collide with
+	// third-party checkboxes. If a checkbox exists, insert the quality wrapper
+	// immediately before it; otherwise append inside the nameWrap.
+	const titleWrap = nameEl.closest('.title-wrap') || nameWrap;
+	let wrap = titleWrap.querySelector('.tt-quality-inline-wrap');
+	if (!wrap) {
+	  wrap = document.createElement('span');
+	  wrap.className = 'tt-quality-inline-wrap';
+	  const checkbox = titleWrap.querySelector('input[type="checkbox"], [role="checkbox"], .checkbox');
+	  if (checkbox && checkbox.parentElement === titleWrap) {
+		titleWrap.insertBefore(wrap, checkbox);
+	  } else if (nameWrap !== titleWrap) {
+		// If titleWrap is different, append after the nameWrap to keep grouping
+		nameWrap.parentElement?.insertBefore(wrap, nameWrap.nextSibling);
+	  } else {
+		nameWrap.appendChild(wrap);
+	  }
 	}
+
+	let label = wrap.querySelector(`.${LABEL_CLASS}`);
 	if (!label) {
 	  label = document.createElement("span");
 	  label.className = LABEL_CLASS;
-	  nameEl.after(label);
+	  wrap.appendChild(label);
 	}
 	label.textContent = formatBadgeTextFromRaw(pRaw);
 	label.style.color = color;
@@ -344,14 +483,16 @@
 
 	function upsertInlineMoneybag(labelEl, url) {
 	if (!labelEl || !url) return;
-	// Insert/update the moneybag link directly after the quality label
-	let btn = labelEl.nextElementSibling;
-	if (!btn || !btn.classList.contains(MONEYBAG_CLASS)) {
+	injectCSSOnce();
+	const wrap = labelEl.closest('.tt-quality-inline-wrap');
+	if (!wrap) return;
+	let btn = wrap.querySelector(`.${MONEYBAG_CLASS}`);
+	if (!btn) {
 	  btn = document.createElement('a');
 	  btn.className = MONEYBAG_CLASS;
 	  btn.textContent = '💰';
 	  btn.title = 'Search Item Market for this stat range';
-	  labelEl.after(btn);
+	  wrap.appendChild(btn);
 	}
 	btn.href = url;
 	btn.target = '_blank';
@@ -471,11 +612,21 @@
 	}
 
 	function bzFindValue(statsBlock, label) {
-	// Torn bazaar uses the non-standard "area-label" attribute instead of "aria-label"
-	const icon = statsBlock.querySelector(`i[area-label="${label}"], i[aria-label="${label}"]`);
+	// Torn bazaar uses the non-standard "area-label" attribute instead of "aria-label".
+	// The add listing page also renders icons only by class name.
+	const selectors = [
+	  `i[area-label="${label}"]`,
+	  `i[aria-label="${label}"]`,
+	];
+	if (label === 'defence') {
+	  selectors.push('i.bonus-attachment-item-defence-bonus', 'i.bonus-attachment-item-armor-bonus');
+	} else {
+	  selectors.push(`i.bonus-attachment-item-${label}-bonus`);
+	}
+	const icon = statsBlock.querySelector(selectors.join(', '));
 	if (!icon) return null;
-	const container = icon.closest("div") || icon.parentElement;
-	const valEl = container?.querySelector("span.t-overflow") || icon.nextElementSibling;
+	const container = icon.closest('div') || icon.parentElement;
+	const valEl = container?.querySelector('span.t-overflow') || icon.nextElementSibling;
 	const val = parseFloat(safeText(valEl));
 	return Number.isFinite(val) ? val : null;
 	}
@@ -568,6 +719,33 @@
 	}
 	}
 
+	function recolorBazaarAdd() {
+	for (const itemEl of document.querySelectorAll(BZ_ADD_ITEM_SELECTOR)) {
+	  const itemId = getItemId(itemEl);
+	  if (!itemId) continue;
+	  const stats = bzGetRollStats(itemEl);
+	  if (!stats.isWeapon && !stats.isArmor) continue;
+	  let pRaw = null;
+	  if (stats.isWeapon) {
+		const base = WEAPON_BASE[itemId];
+		if (!base) continue;
+		pRaw = weaponHeatRaw(stats.damage, stats.accuracy, base);
+	  } else {
+		const base = ARMOR_BASE[itemId];
+		if (!base) continue;
+		pRaw = armorHeatRaw(stats.armor, base);
+	  }
+	  if (pRaw === null) continue;
+	  const color = colorForHeat(quantizeHeat(toHeat(pRaw)));
+	  const nameEl = itemEl.querySelector('.title-wrap .name-wrap span.t-overflow, .title-wrap .name-wrap .name, .title-wrap .name');
+	  const labelEl = upsertInlineLabel(nameEl, pRaw, color);
+	  if (labelEl) {
+		const wrap = labelEl.closest('.tt-quality-inline-wrap');
+		wrap?.querySelector(`.${MONEYBAG_CLASS}`)?.remove();
+	  }
+	}
+	}
+
 	function recolorItemPage() {
 	for (const li of document.querySelectorAll(IP_TILE_SELECTOR)) {
 	  const itemId = getItemId(li);
@@ -657,7 +835,11 @@
 	  if (pRaw === null) continue;
 	  const color  = colorForHeat(quantizeHeat(toHeat(pRaw)));
 	  const nameEl = li.querySelector(".title-wrap .name-wrap .t-overflow");
-	  upsertInlineLabel(nameEl, pRaw, color);
+	  const labelEl = upsertInlineLabel(nameEl, pRaw, color);
+	  // Add price to dump items
+	  if (labelEl && pricesCache[itemId]) {
+		addPriceToElement(labelEl, itemId);
+	  }
 	}
 	}
 
@@ -679,11 +861,58 @@
 	}
 	}
 
+	function bigAlGetRollStats(root) {
+	const statsContainer = root.querySelector('.bonuses, .bonuses-wrap') || root;
+	let damage = null;
+	let accuracy = null;
+	let armor = null;
+	for (const li of statsContainer.querySelectorAll('li')) {
+	  const txt = safeText(li).replace(/[$,]/g, '');
+	  const value = parseFloat(txt);
+	  if (!Number.isFinite(value)) continue;
+	  const icon = li.querySelector('i');
+	  if (!icon) continue;
+	  const cls = icon.className;
+	  if (cls.includes('bonus-attachment-item-damage-bonus')) {
+		damage = value;
+	  } else if (cls.includes('bonus-attachment-item-accuracy-bonus')) {
+		accuracy = value;
+	  } else if (cls.includes('bonus-attachment-item-defence-bonus') || cls.includes('bonus-attachment-item-armor-bonus')) {
+		armor = value;
+	  }
+	}
+	return {
+	  isWeapon: damage !== null && accuracy !== null,
+	  isArmor: armor !== null && damage === null,
+	  damage, accuracy, armor
+	};
+	}
+
+	function recolorBigAlGunShop() {
+	for (const li of document.querySelectorAll(BIGAL_TILE_SELECTOR)) {
+	  const itemId = getItemId(li);
+	  if (!itemId) continue;
+	  const stats = bigAlGetRollStats(li);
+	  if (!stats.isWeapon && !stats.isArmor) continue;
+	  const pRaw = stats.isWeapon
+	    ? weaponHeatRaw(stats.damage, stats.accuracy, WEAPON_BASE[itemId])
+	    : armorHeatRaw(stats.armor, ARMOR_BASE[itemId]);
+	  if (pRaw === null) continue;
+	  const color = colorForHeat(quantizeHeat(toHeat(pRaw)));
+	  const nameEl = li.querySelector(
+	    'li.desc.t-overflow span.name, .desc.t-overflow span.name, .desc span.name, span.name'
+	  );
+	  const labelEl = upsertInlineLabel(nameEl, pRaw, color);
+	  upsertInlineMoneybag(labelEl, buildMarketUrl(itemId, stats));
+	}
+	}
+
 	/** ==================== MAIN ==================== **/
 	const PAGE = (() => {
 	const h = window.location.href;
 	if (h.includes('page.php?sid=ItemMarket')) return 'itemmarket';
 	if (h.includes('bazaar.php'))              return 'bazaar';
+	if (h.includes('bigalgunshop.php'))        return 'bigalgunshop';
 	if (h.includes('item.php'))                return 'itempage';
 	if (h.includes('dump.php'))                return 'dump';
 	if (h.includes('factions.php'))            return 'factions';
@@ -691,10 +920,19 @@
 	return 'unknown';
 	})();
 
-	function recolorAll() {
+	async function recolorAll() {
 	try {
-	  if      (PAGE === 'itemmarket') { recolorItemMarket(); recolorAddListing(); recolorItemMarketSearch(); }
-	  else if (PAGE === 'bazaar')     recolorBazaar();
+	  // Fetch prices for dump page
+	  if (PAGE === 'dump') {
+		await fetchItemPrices();
+	  }
+	if      (PAGE === 'itemmarket') { recolorItemMarket(); recolorAddListing(); recolorItemMarketSearch(); }
+	else if (PAGE === 'bazaar') {
+		recolorBazaar();
+		// Intentionally do not run recolorBazaarAdd() on the "add" tab to avoid
+		// interfering with third-party checkboxes and layout.
+	}
+	  else if (PAGE === 'bigalgunshop') recolorBigAlGunShop();
 	  else if (PAGE === 'itempage')   recolorItemPage();
 	  else if (PAGE === 'dump')       recolorDumpTrash();
 	  else if (PAGE === 'factions')   recolorFactionArmory();
@@ -715,5 +953,10 @@
 	const observer = new MutationObserver(schedule);
 	observer.observe(document.body, { childList: true, subtree: true });
 
-	recolorAll();
+	// Initialize script
+	if (PAGE === 'dump') {
+		fetchItemPrices().then(() => recolorAll());
+	} else {
+		recolorAll();
+	}
 })();
