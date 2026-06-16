@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn item Quality Viewer
 // @namespace    http://tampermonkey.net/
-// @version      1.3.14
+// @version      1.3.0
 // @description  This script gives players a quick visual guide to how good a weapon or armor roll is by color-coding the quality directly onto the item image with a heat map based font coloring.
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -17,6 +17,8 @@
 // @grant        GM_getValue
 // @grant        GM_setValue
 // @grant        none
+// @downloadURL https://update.greasyfork.org/scripts/579809/Torn%20item%20Quality%20Viewer.user.js
+// @updateURL https://update.greasyfork.org/scripts/579809/Torn%20item%20Quality%20Viewer.meta.js
 // ==/UserScript==
 
 (function () {
@@ -349,19 +351,10 @@
 		user-select: none;
 		white-space: nowrap;
 	  }
-	  .tt-quality-inline-wrap {
-		display: inline-flex;
-		align-items: center;
-		gap: 4px;
-		margin-left: 6px;
-		vertical-align: middle;
-		flex: none;
-		order: 1000;
-	  }
 	  .${LABEL_CLASS} {
 		font-size: 11px;
 		font-weight: bold;
-		margin: 0;
+		margin-left: 5px;
 		vertical-align: middle;
 	  }
 	  .${MONEYBAG_CLASS} {
@@ -448,33 +441,18 @@
 	function upsertInlineLabel(nameEl, pRaw, color) {
 	if (!nameEl) return null;
 	injectCSSOnce();
-	const nameWrap = nameEl.closest('.name-wrap') || nameEl.parentElement;
-	if (!nameWrap) return null;
-
-	// Prefer inserting into the containing title area so we don't collide with
-	// third-party checkboxes. If a checkbox exists, insert the quality wrapper
-	// immediately before it; otherwise append inside the nameWrap.
-	const titleWrap = nameEl.closest('.title-wrap') || nameWrap;
-	let wrap = titleWrap.querySelector('.tt-quality-inline-wrap');
-	if (!wrap) {
-	  wrap = document.createElement('span');
-	  wrap.className = 'tt-quality-inline-wrap';
-	  const checkbox = titleWrap.querySelector('input[type="checkbox"], [role="checkbox"], .checkbox');
-	  if (checkbox && checkbox.parentElement === titleWrap) {
-		titleWrap.insertBefore(wrap, checkbox);
-	  } else if (nameWrap !== titleWrap) {
-		// If titleWrap is different, append after the nameWrap to keep grouping
-		nameWrap.parentElement?.insertBefore(wrap, nameWrap.nextSibling);
-	  } else {
-		nameWrap.appendChild(wrap);
-	  }
+	// Scan siblings rather than only checking the immediate next sibling,
+	// so re-renders still find the label after the moneybag has been inserted between them
+	let label = null;
+	let sib = nameEl.nextElementSibling;
+	while (sib) {
+	  if (sib.classList.contains(LABEL_CLASS)) { label = sib; break; }
+	  sib = sib.nextElementSibling;
 	}
-
-	let label = wrap.querySelector(`.${LABEL_CLASS}`);
 	if (!label) {
 	  label = document.createElement("span");
 	  label.className = LABEL_CLASS;
-	  wrap.appendChild(label);
+	  nameEl.after(label);
 	}
 	label.textContent = formatBadgeTextFromRaw(pRaw);
 	label.style.color = color;
@@ -483,16 +461,14 @@
 
 	function upsertInlineMoneybag(labelEl, url) {
 	if (!labelEl || !url) return;
-	injectCSSOnce();
-	const wrap = labelEl.closest('.tt-quality-inline-wrap');
-	if (!wrap) return;
-	let btn = wrap.querySelector(`.${MONEYBAG_CLASS}`);
-	if (!btn) {
+	// Insert/update the moneybag link directly after the quality label
+	let btn = labelEl.nextElementSibling;
+	if (!btn || !btn.classList.contains(MONEYBAG_CLASS)) {
 	  btn = document.createElement('a');
 	  btn.className = MONEYBAG_CLASS;
 	  btn.textContent = '💰';
 	  btn.title = 'Search Item Market for this stat range';
-	  wrap.appendChild(btn);
+	  labelEl.after(btn);
 	}
 	btn.href = url;
 	btn.target = '_blank';
@@ -737,12 +713,9 @@
 	  }
 	  if (pRaw === null) continue;
 	  const color = colorForHeat(quantizeHeat(toHeat(pRaw)));
-	  const nameEl = itemEl.querySelector('.title-wrap .name-wrap span.t-overflow, .title-wrap .name-wrap .name, .title-wrap .name');
+	  const nameEl = itemEl.querySelector('.title-wrap .name-wrap span.t-overflow');
 	  const labelEl = upsertInlineLabel(nameEl, pRaw, color);
-	  if (labelEl) {
-		const wrap = labelEl.closest('.tt-quality-inline-wrap');
-		wrap?.querySelector(`.${MONEYBAG_CLASS}`)?.remove();
-	  }
+	  upsertInlineMoneybag(labelEl, buildMarketUrl(itemId, stats));
 	}
 	}
 
@@ -926,12 +899,11 @@
 	  if (PAGE === 'dump') {
 		await fetchItemPrices();
 	  }
-	if      (PAGE === 'itemmarket') { recolorItemMarket(); recolorAddListing(); recolorItemMarketSearch(); }
-	else if (PAGE === 'bazaar') {
-		recolorBazaar();
-		// Intentionally do not run recolorBazaarAdd() on the "add" tab to avoid
-		// interfering with third-party checkboxes and layout.
-	}
+	  if      (PAGE === 'itemmarket') { recolorItemMarket(); recolorAddListing(); recolorItemMarketSearch(); }
+	  else if (PAGE === 'bazaar') {
+	    recolorBazaar();
+	    //if (window.location.href.includes('bazaar.php#/add')) recolorBazaarAdd();
+	  }
 	  else if (PAGE === 'bigalgunshop') recolorBigAlGunShop();
 	  else if (PAGE === 'itempage')   recolorItemPage();
 	  else if (PAGE === 'dump')       recolorDumpTrash();
