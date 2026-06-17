@@ -1,4 +1,9 @@
+/*
+DEPRECATED: This userscript is no longer maintained (2026-06-17).
+Remove or replace with an updated script as needed.
+*/
 // ==UserScript==
+// @deprecated   2026-06-17    DEPRECATED: no longer maintained
 // @name         Torn Items Auto-Close
 // @namespace    https://www.torn.com/
 // @version      1.2.0
