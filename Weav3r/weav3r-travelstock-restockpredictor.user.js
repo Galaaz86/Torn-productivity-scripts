@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Adds predicted restock time based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -87,39 +87,55 @@
     return match ? match[1].trim() : null;
   }
 
-  // Parse the recharts area-curve path and find the last x where stock
-  // transitioned from in-stock to sold-out (y rose above the zero-stock baseline).
-  function findLastSelloutX(svg) {
-    const path =
-      svg.querySelector('.recharts-area-curve') ||
-      svg.querySelector('.recharts-area-area');
-    if (!path) return null;
+  // Read the last red reference line (sold-out marker) placed by recharts.
+  // Returns { label: "12:28", minutes: <cumulative> } or null.
+  // Primary: reads from recharts red reference lines (accurate timestamp from site data).
+  // Fallback: parses the area-curve path coordinates (may be ~15min off due to
+  // non-uniform chart density, but works when reference lines haven't rendered yet).
+  function findLastSelloutInfo(svg, ticks) {
+    const lines = [...svg.querySelectorAll('.recharts-reference-line line')]
+      .filter(line => line.getAttribute('stroke') === '#ef4444');
 
+    if (lines.length) {
+      lines.sort((a, b) => parseFloat(b.getAttribute('x1')) - parseFloat(a.getAttribute('x1')));
+      const lastLine = lines[0];
+      const label = lastLine.getAttribute('x'); // e.g. "12:28"
+      if (label) {
+        const parts = label.split(':');
+        if (parts.length === 2) {
+          const rawMinutes = parseInt(parts[0], 10) * 60 + parseInt(parts[1], 10);
+          const approxMinutes = xToMinutes(parseFloat(lastLine.getAttribute('x1')), ticks);
+          const dayOffset = approxMinutes !== null
+            ? Math.round((approxMinutes - rawMinutes) / 1440) * 1440
+            : 0;
+          return { label, minutes: rawMinutes + dayOffset };
+        }
+      }
+    }
+
+    // Fallback: parse the area-curve path
+    const path = svg.querySelector('.recharts-area-curve') || svg.querySelector('.recharts-area-area');
+    if (!path) return null;
     const d = path.getAttribute('d') || '';
     if (!d) return null;
 
-    // Extract every (x, y) pair from M and L commands
     const points = [];
     const re = /[LM]([\d.]+),([\d.]+)/g;
-    let match;
-    while ((match = re.exec(d)) !== null) {
-      points.push({ x: parseFloat(match[1]), y: parseFloat(match[2]) });
-    }
+    let m;
+    while ((m = re.exec(d)) !== null) points.push({ x: parseFloat(m[1]), y: parseFloat(m[2]) });
     if (points.length < 2) return null;
 
-    // The maximum y value in the path = the "zero stock" baseline (e.g. y=170)
     const maxY = Math.max(...points.map(p => p.y));
-    // Threshold just below maxY — everything above this is "at zero stock"
     const soldOutLevel = maxY - 0.2;
-
     let lastSelloutX = null;
     for (let i = 1; i < points.length; i++) {
-      // Transition: previous point had stock, current point has no stock
-      if (points[i].y > soldOutLevel && points[i - 1].y <= soldOutLevel) {
-        lastSelloutX = points[i].x;
-      }
+      if (points[i].y > soldOutLevel && points[i - 1].y <= soldOutLevel) lastSelloutX = points[i].x;
     }
-    return lastSelloutX;
+    if (lastSelloutX === null) return null;
+
+    const minutes = xToMinutes(lastSelloutX, ticks);
+    if (minutes === null) return null;
+    return { label: minutesToHHMM(minutes), minutes };
   }
 
   function processPanel(panel) {
@@ -153,15 +169,14 @@
     const ticks = buildTimeTicks(svg);
     if (ticks.length < 2) return;
 
-    const lastSelloutX = findLastSelloutX(svg);
-    if (lastSelloutX === null) return;
+    const selloutInfo = findLastSelloutInfo(svg, ticks);
+    if (!selloutInfo) return;
 
-    const lastSelloutMinutes = xToMinutes(lastSelloutX, ticks);
-    if (lastSelloutMinutes === null) return;
+    const lastSelloutMinutes = selloutInfo.minutes;
+    const lastSelloutStr = selloutInfo.label;
 
     const nextRestockMinutes = lastSelloutMinutes + delayMinutes;
     const nextRestockStr = minutesToHHMM(nextRestockMinutes);
-    const lastSelloutStr = minutesToHHMM(lastSelloutMinutes);
 
     // Travel time from the "Stock on Arrival Estimate" card
     const travelTimeText = getTravelTimeText(panel);
