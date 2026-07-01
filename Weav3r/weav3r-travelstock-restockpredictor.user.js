@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
-// @version      1.1.0
-// @description  Adds predicted restock time based on last sell-out + restock delay from the stock chart
+// @version      1.2.0
+// @description  Adds predicted restock time, sell-out estimate, and "fly now" stock-on-arrival check based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
 // @match        https://weav3r.dev/travel-stock*
@@ -566,6 +566,69 @@
 		const endOfStockStr = endOfStockMinutes != null ? minutesToHHMM(endOfStockMinutes) : null;
 		const minsUntilEnd = endOfStockMinutes != null ? Math.round(endOfStockMinutes - nowMinutes) : null;
 
+		// ── "Depart Now" — does flying right now land you with stock? ───────
+		let flyNowSection = '';
+		if (travelMinutes != null && sellOutMinutes != null) {
+			const depletionLabelP = [...panel.querySelectorAll('p')].find(p => p.textContent.trim() === 'Depletion Rate');
+			const rateHigh = parseFloat((depletionLabelP?.nextElementSibling?.textContent || '').match(/[\d.]+/)?.[0]);
+			const medMatch = (depletionLabelP?.nextElementSibling?.nextElementSibling?.textContent || '').match(/Med:\s*([\d.]+)/i);
+			const rateLow = medMatch ? parseFloat(medMatch[1]) : rateHigh;
+
+			const restockQtyLabelP = [...panel.querySelectorAll('p')].find(p => p.textContent.trim() === 'Restock Qty');
+			const maxStock = parseInt((restockQtyLabelP?.nextElementSibling?.textContent || '').replace(/[^\d]/g, ''), 10) || null;
+
+			const emptyInLabelP = [...panel.querySelectorAll('p')].find(p => p.textContent.trim() === 'Est. Empty In');
+			const emptyInText = emptyInLabelP?.nextElementSibling?.textContent?.trim() || '';
+			const estEmptyMinutes = emptyInText && emptyInText !== 'Any moment' ? parseDelayToMinutes(emptyInText) : null;
+
+			if (maxStock && !isNaN(rateHigh)) {
+				const cyclePeriod = delayMinutes + sellOutMinutes;
+				let windowRestockMinutes = nextRestockMinutes; // R0: last-known restock event, may be past (stock live) or future (still waiting)
+				let windowEmptyMinutes = (windowRestockMinutes <= nowMinutes && estEmptyMinutes != null)
+					? nowMinutes + estEmptyMinutes
+					: windowRestockMinutes + sellOutMinutes;
+
+				const arrivalMinutes = nowMinutes + travelMinutes;
+				let flyCycles = 0;
+				while (arrivalMinutes >= windowEmptyMinutes && cyclePeriod > 0 && flyCycles < 50) {
+					windowRestockMinutes += cyclePeriod;
+					windowEmptyMinutes = windowRestockMinutes + sellOutMinutes;
+					flyCycles++;
+				}
+
+				const arrivalStr = minutesToHHMM(arrivalMinutes);
+				const arrivesWithStock = arrivalMinutes >= windowRestockMinutes && arrivalMinutes < windowEmptyMinutes;
+
+				if (arrivesWithStock) {
+					const elapsed = Math.max(0, arrivalMinutes - windowRestockMinutes);
+					const remA = Math.max(0, Math.round(maxStock - rateHigh * elapsed));
+					const remB = Math.max(0, Math.round(maxStock - rateLow * elapsed));
+					const remUpper = Math.max(remA, remB);
+					const remLower = Math.min(remA, remB);
+					const soldOutStr = minutesToHHMM(windowEmptyMinutes);
+					const minsUntilSoldOut = Math.round(windowEmptyMinutes - nowMinutes);
+
+					flyNowSection = `
+					<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 2px 0;">Depart Now</p>
+					<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
+						Arrive ${arrivalStr} local
+					</p>
+					<p style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:4px 0 1px 0;">
+						Est. stock left: <span style="color:${color}">${remUpper.toLocaleString()}–${remLower.toLocaleString()}</span>
+					</p>
+					<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">Sold out at ${soldOutStr} (${statusFor(minsUntilSoldOut)})</p>`;
+				} else {
+					flyNowSection = `
+					<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 2px 0;">Depart At:</p>
+					<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
+						${leaveByStr ? `${leaveByStr} local` : 'N/A'}
+					</p>
+					<p style="font-size:9px;color:rgb(239,68,68);margin:4px 0 1px 0;">Flying now arrives ${arrivalStr} — sold out on arrival</p>
+					<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">Next stock at ${targetRestockStr}</p>`;
+				}
+			}
+		}
+
 		const statsGrid = panel.querySelector('.grid');
 		if (!statsGrid) return;
 
@@ -599,6 +662,11 @@
 							${endOfStockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusFor(minsUntilEnd)})</span>
 						</p>
 						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">${targetRestockStr} + ${sellOutText} sell out time</p>
+					</div>` : ''}
+					${flyNowSection ? `
+					<div style="width:1px;background:var(--border-color,rgba(128,128,128,0.25));margin:0 12px;align-self:stretch;flex-shrink:0;"></div>
+					<div style="flex:1;min-width:0;">
+						${flyNowSection}
 					</div>` : ''}
 				</div>
 			</div>`;
