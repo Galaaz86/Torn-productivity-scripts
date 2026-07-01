@@ -1,17 +1,186 @@
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
-// @version      1..0
+// @version      1.1.2
 // @description  Adds predicted restock time based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
 // @match        https://weav3r.dev/travel-stock*
 // @grant        none
 // @run-at       document-idle
+// @downloadURL https://update.greasyfork.org/scripts/584664/TornW3B%20Travel%20Stock%20-%20Restock%20Predictor.user.js
+// @updateURL https://update.greasyfork.org/scripts/584664/TornW3B%20Travel%20Stock%20-%20Restock%20Predictor.meta.js
 // ==/UserScript==
 
 (function () {
 	'use strict';
+
+	// ── Hardcoded flight times [standard, airstrip, wlt, business] in minutes ──
+	const FLIGHT_TIMES = {
+		'ciudad juárez': [25,  17,  12,   8],
+		'george town':   [33,  24,  17,  10],
+		'toronto':       [39,  27,  19,  11],
+		'honolulu':      [127,  89,  63,  38],
+		'london':        [151, 105,  76,  45],
+		'buenos aires':  [158, 111,  79,  47],
+		'zurich':        [166, 117,  83,  50],
+		'tokyo':         [213, 150, 107,  64],
+		'beijing':       [229, 160, 115,  68],
+		'dubai':         [257, 180, 128,  77],
+		'johannesburg':  [281, 197, 141,  84],
+	};
+
+	const CITY_ALIASES = {
+		'mexico': 'ciudad juárez',
+		'cayman': 'george town', 'cayman islands': 'george town',
+		'canada': 'toronto',
+		'hawaii': 'honolulu',
+		'uk': 'london', 'united kingdom': 'london', 'england': 'london',
+		'argentina': 'buenos aires',
+		'switzerland': 'zurich',
+		'japan': 'tokyo',
+		'china': 'beijing',
+		'uae': 'dubai', 'united arab emirates': 'dubai',
+		'south africa': 'johannesburg',
+	};
+
+	const MODE_MAP = {
+		'standard': 0, 'airstrip': 1,
+		'wlt': 2, 'wlt benefit': 2,
+		'business': 3, 'business class': 3,
+	};
+
+	function resolveCity(raw) {
+		const s = raw.toLowerCase().trim().replace(/[-_]/g, ' ');
+		return FLIGHT_TIMES[s] ? s : (CITY_ALIASES[s] || null);
+	}
+
+	function minutesToDuration(mins) {
+		const h = Math.floor(mins / 60), m = mins % 60;
+		return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+	}
+
+	// Sort longest-first so "buenos aires" matches before "argentina", etc.
+	const ALL_CITY_NAMES = [...Object.keys(FLIGHT_TIMES), ...Object.keys(CITY_ALIASES)]
+		.sort((a, b) => b.length - a.length);
+
+	// Map flag filenames → canonical city key (used for mobile where no text is shown)
+	const FLAG_CITY_MAP = {
+		'fl_mexico': 'ciudad juárez',
+		'fl_cayman_islands': 'george town',
+		'fl_canada': 'toronto',
+		'fl_hawaii': 'honolulu',
+		'fl_uk': 'london',
+		'fl_argentina': 'buenos aires',
+		'fl_switzerland': 'zurich',
+		'fl_japan': 'tokyo',
+		'fl_china': 'beijing',
+		'fl_uae': 'dubai',
+		'fl_south_africa': 'johannesburg',
+	};
+
+	function cityFromFlag(el) {
+		const img = el?.querySelector('img[src*="fl_"]');
+		if (!img) return null;
+		const m = (img.getAttribute('src') || '').match(/fl_([\w]+)\.svg/);
+		return m ? (FLAG_CITY_MAP['fl_' + m[1]] || null) : null;
+	}
+
+	function textCity(el) {
+		if (!el) return null;
+		const text = el.textContent.toLowerCase();
+		for (const alias of ALL_CITY_NAMES) {
+			if (text.includes(alias)) return resolveCity(alias);
+		}
+		return null;
+	}
+
+	function detectCity(panel) {
+		// Desktop table: panel is inside <td colspan> → <tr> (expanded row).
+		// Country name + flag are in the PREVIOUS <tr>.
+		const row = panel.closest('tr');
+		const prevRow = row?.previousElementSibling;
+		if (prevRow) {
+			const c = cityFromFlag(prevRow) || textCity(prevRow);
+			if (c) return c;
+		}
+
+		// Mobile accordion: panel is inside a border-b wrapper div that also
+		// contains the header div with the flag image.
+		const borderDiv = panel.closest('[class*="border-b"]');
+		if (borderDiv) {
+			const c = cityFromFlag(borderDiv) || textCity(borderDiv);
+			if (c) return c;
+		}
+
+		// Panel text itself
+		const c = textCity(panel);
+		if (c) return c;
+
+		// URL path segments
+		for (const seg of window.location.pathname.split('/')) {
+			const key = resolveCity(decodeURIComponent(seg));
+			if (key) return key;
+		}
+		// URL query params
+		const params = new URLSearchParams(window.location.search);
+		for (const k of ['city', 'destination', 'location', 'country']) {
+			const key = resolveCity(params.get(k) || '');
+			if (key) return key;
+		}
+		// Global headings fallback
+		for (const el of document.querySelectorAll('h1, h2, h3')) {
+			const key = textCity(el);
+			if (key) return key;
+		}
+		return null;
+	}
+
+	function detectMode() {
+		// URL params
+		const params = new URLSearchParams(window.location.search);
+		for (const k of ['mode', 'travel', 'travelmode', 'travel_mode', 'class', 'travelclass']) {
+			const v = (params.get(k) || '').toLowerCase().replace(/[-_]/g, ' ');
+			if (MODE_MAP[v] !== undefined) return v;
+		}
+		// Weav3r uses inline styles for selection state — the active button has
+		// "var(--accent-primary)" in its style whereas inactive buttons use
+		// "var(--text-secondary)" and "border: 1px solid transparent".
+		// Find the "Travel time" label, then check its sibling button group.
+		const travelLabel = [...document.querySelectorAll('p')].find(p =>
+			p.textContent.trim().toLowerCase() === 'travel time'
+		);
+		if (travelLabel) {
+			const btnGroup = travelLabel.nextElementSibling;
+			if (btnGroup) {
+				for (const btn of btnGroup.querySelectorAll('button')) {
+					const style = btn.getAttribute('style') || '';
+					const text = btn.textContent.trim().toLowerCase();
+					if (style.includes('var(--accent-primary)') && MODE_MAP[text] !== undefined) {
+						return text;
+					}
+				}
+			}
+		}
+		// Generic fallback (aria / class based)
+		for (const sel of ['[aria-selected="true"]', '[data-state="active"]', '[data-active="true"]']) {
+			for (const el of document.querySelectorAll(sel)) {
+				const text = el.textContent.toLowerCase();
+				for (const k of Object.keys(MODE_MAP)) {
+					if (text.includes(k)) return k;
+				}
+			}
+		}
+		return null;
+	}
+
+	function getFlightInfo(panel) {
+		const city = detectCity(panel);
+		if (!city) return null;
+		const mode = detectMode() || 'standard';
+		const mins = FLIGHT_TIMES[city][MODE_MAP[mode] ?? 0];
+		return { mins, city, mode };
+	}
 
 	// "1h 58m" | "45m" | "2h" → total minutes
 	function parseDelayToMinutes(text) {
@@ -283,6 +452,12 @@
 		const delayMinutes = parseDelayToMinutes(delayText);
 		if (!delayMinutes) return;
 
+		const sellOutLabel = [...panel.querySelectorAll('p')].find(p =>
+			p.textContent.trim() === 'Sell Out Time'
+		);
+		const sellOutText = sellOutLabel?.nextElementSibling?.textContent?.trim() || '';
+		const sellOutMinutes = sellOutText ? parseDelayToMinutes(sellOutText) : null;
+
 		const ticks = buildTimeTicks(svg);
 		if (ticks.length < 2) return;
 
@@ -339,31 +514,42 @@
 
 		const nextRestockStr = minutesToHHMM(nextRestockMinutes);
 
-		const travelTimeText = getTravelTimeText(panel);
-		const travelMinutes = travelTimeText ? parseDelayToMinutes(travelTimeText) : null;
+		const flightInfo = getFlightInfo(panel);
+		let travelMinutes, travelLabel;
+		if (flightInfo) {
+			travelMinutes = flightInfo.mins;
+			travelLabel = `${minutesToDuration(flightInfo.mins)} · ${flightInfo.city} · ${flightInfo.mode}`;
+		} else {
+			const travelTimeText = getTravelTimeText(panel);
+			travelMinutes = travelTimeText ? parseDelayToMinutes(travelTimeText) : null;
+			travelLabel = travelTimeText ? `${travelTimeText} (site)` : null;
+		}
 		const leaveByStr = travelMinutes
 			? minutesToHHMM(nextRestockMinutes - travelMinutes)
 			: null;
 
 		const minsUntil = Math.round(nextRestockMinutes - nowMinutes);
 
-		let statusText, bg, borderColor, color;
+		function statusFor(mins) {
+			if (mins > 5)    return `in ~${mins}m`;
+			if (mins >= -60) return 'any moment';
+			return `${Math.abs(mins)}m overdue`;
+		}
+
+		let bg, borderColor, color;
 		if (minsUntil > 5) {
-			statusText = `in ~${minsUntil}m`;
 			bg = 'rgba(59,130,246,0.06)';
 			borderColor = 'rgba(59,130,246,0.4)';
 			color = 'var(--accent-primary, #3b82f6)';
-		} else if (minsUntil >= -60) {
-			statusText = 'due any moment';
-			bg = 'rgba(239,68,68,0.06)';
-			borderColor = 'rgba(239,68,68,0.3)';
-			color = 'rgb(239,68,68)';
 		} else {
-			statusText = `${Math.abs(minsUntil)}m overdue`;
 			bg = 'rgba(239,68,68,0.06)';
 			borderColor = 'rgba(239,68,68,0.3)';
 			color = 'rgb(239,68,68)';
 		}
+
+		const endOfStockMinutes = sellOutMinutes != null ? nextRestockMinutes + sellOutMinutes : null;
+		const endOfStockStr = endOfStockMinutes != null ? minutesToHHMM(endOfStockMinutes) : null;
+		const minsUntilEnd = endOfStockMinutes != null ? Math.round(endOfStockMinutes - nowMinutes) : null;
 
 		const statsGrid = panel.querySelector('.grid');
 		if (!statsGrid) return;
@@ -373,21 +559,32 @@
 		banner.setAttribute('data-restock-predictor', accurate ? 'accurate' : 'estimate');
 		banner.style.cssText = `background:${bg};border-color:${borderColor};margin-top:8px;`;
 		banner.innerHTML = `
-			<div style="display:flex;align-items:center;gap:8px;">
-				<svg style="width:16px;height:16px;flex-shrink:0;color:${color}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+			<div style="display:flex;align-items:flex-start;gap:8px;">
+				<svg style="width:16px;height:16px;flex-shrink:0;margin-top:2px;color:${color}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 					<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
 				</svg>
-				<div>
-					<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 2px 0;">Predicted Restock</p>
-					<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
-						${nextRestockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusText})</span>
-					</p>
-					${leaveByStr ? `
-					<p style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:4px 0 1px 0;">
-						Depart by: <span style="color:${color}">${leaveByStr} local</span>
-						<span style="font-size:9px;font-weight:400;opacity:0.65;"> — site travel time: ${travelTimeText}</span>
-					</p>` : ''}
-					<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">Sold out at ${lastSelloutStr} + ${delayText} restock delay</p>
+				<div style="display:flex;gap:0;flex:1;min-width:0;">
+					<div style="flex:1;min-width:0;">
+						<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 2px 0;">Predicted Restock</p>
+						<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
+							${nextRestockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusFor(minsUntil)})</span>
+						</p>
+						${leaveByStr ? `
+						<p style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:4px 0 1px 0;">
+							Depart by: <span style="color:${color}">${leaveByStr} local</span>
+							<span style="font-size:9px;font-weight:400;opacity:0.65;"> — ${travelLabel}</span>
+						</p>` : ''}
+						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">Sold out at ${lastSelloutStr} + ${delayText} restock delay</p>
+					</div>
+					${endOfStockStr ? `
+					<div style="width:1px;background:var(--border-color,rgba(128,128,128,0.25));margin:0 12px;align-self:stretch;flex-shrink:0;"></div>
+					<div style="flex:1;min-width:0;">
+						<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 2px 0;">Est. End of Stock</p>
+						<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
+							${endOfStockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusFor(minsUntilEnd)})</span>
+						</p>
+						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">${nextRestockStr} + ${sellOutText} sell out time</p>
+					</div>` : ''}
 				</div>
 			</div>`;
 
