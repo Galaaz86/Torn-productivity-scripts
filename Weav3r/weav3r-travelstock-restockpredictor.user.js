@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
-// @version      1.1.2
+// @version      1.1.0
 // @description  Adds predicted restock time based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -524,11 +524,26 @@
 			travelMinutes = travelTimeText ? parseDelayToMinutes(travelTimeText) : null;
 			travelLabel = travelTimeText ? `${travelTimeText} (site)` : null;
 		}
-		const leaveByStr = travelMinutes
-			? minutesToHHMM(nextRestockMinutes - travelMinutes)
-			: null;
+		// When travel time > remaining window, the departure for the next restock
+		// is already in the past. Advance by full cycles (sellOut + delay) until
+		// the departure is in the future again.
+		let targetRestockMinutes = nextRestockMinutes;
+		let cyclesSkipped = 0;
+		if (travelMinutes != null && sellOutMinutes != null) {
+			const cyclePeriod = delayMinutes + sellOutMinutes;
+			if (cyclePeriod > 0) {
+				while ((targetRestockMinutes - travelMinutes) < nowMinutes && cyclesSkipped < 50) {
+					targetRestockMinutes += cyclePeriod;
+					cyclesSkipped++;
+				}
+			}
+		}
 
-		const minsUntil = Math.round(nextRestockMinutes - nowMinutes);
+		const targetRestockStr = minutesToHHMM(targetRestockMinutes);
+		const minsUntil = Math.round(targetRestockMinutes - nowMinutes);
+		const leaveByStr = travelMinutes != null
+			? minutesToHHMM(targetRestockMinutes - travelMinutes)
+			: null;
 
 		function statusFor(mins) {
 			if (mins > 5)    return `in ~${mins}m`;
@@ -547,7 +562,7 @@
 			color = 'rgb(239,68,68)';
 		}
 
-		const endOfStockMinutes = sellOutMinutes != null ? nextRestockMinutes + sellOutMinutes : null;
+		const endOfStockMinutes = sellOutMinutes != null ? targetRestockMinutes + sellOutMinutes : null;
 		const endOfStockStr = endOfStockMinutes != null ? minutesToHHMM(endOfStockMinutes) : null;
 		const minsUntilEnd = endOfStockMinutes != null ? Math.round(endOfStockMinutes - nowMinutes) : null;
 
@@ -567,14 +582,14 @@
 					<div style="flex:1;min-width:0;">
 						<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 2px 0;">Predicted Restock</p>
 						<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
-							${nextRestockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusFor(minsUntil)})</span>
+							${targetRestockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusFor(minsUntil)}${cyclesSkipped > 0 ? ` · +${cyclesSkipped} cycle${cyclesSkipped > 1 ? 's' : ''}` : ''})</span>
 						</p>
 						${leaveByStr ? `
 						<p style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:4px 0 1px 0;">
 							Depart by: <span style="color:${color}">${leaveByStr} local</span>
 							<span style="font-size:9px;font-weight:400;opacity:0.65;"> — ${travelLabel}</span>
 						</p>` : ''}
-						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">Sold out at ${lastSelloutStr} + ${delayText} restock delay</p>
+						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">Sold out at ${lastSelloutStr} + ${delayText} restock delay${cyclesSkipped > 0 ? ` · travel exceeds window, targeting cycle +${cyclesSkipped}` : ''}</p>
 					</div>
 					${endOfStockStr ? `
 					<div style="width:1px;background:var(--border-color,rgba(128,128,128,0.25));margin:0 12px;align-self:stretch;flex-shrink:0;"></div>
@@ -583,7 +598,7 @@
 						<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
 							${endOfStockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusFor(minsUntilEnd)})</span>
 						</p>
-						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">${nextRestockStr} + ${sellOutText} sell out time</p>
+						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">${targetRestockStr} + ${sellOutText} sell out time</p>
 					</div>` : ''}
 				</div>
 			</div>`;
