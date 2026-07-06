@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn item Quality Viewer
 // @namespace    http://tampermonkey.net/
-// @version      1.3.0
+// @version      1.3.2
 // @description  This script gives players a quick visual guide to how good a weapon or armor roll is by color-coding the quality directly onto the item image with a heat map based font coloring.
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -208,6 +208,7 @@
 	/** ==================== SELECTORS ==================== **/
 	const IM_TILE_SELECTOR        = "li.tt-highlight-modified";
 	const IM_SEARCH_TILE_SELECTOR = 'div[class*="itemTile___"]';
+	const IM_SEARCH_PRICE_SELECTOR = 'div[class*="priceAndTotal___"]';
 
 	const AL_TILE_SELECTOR = 'div[class*="virtualListing"]';
 	const AL_BUTTON_SELECTOR = 'button[class*="viewInfoButton"]';
@@ -503,6 +504,23 @@
 	btn.rel = 'noopener noreferrer';
 	}
 
+	function upsertPriceMoneybag(tile, url) {
+	if (!url) return;
+	const priceWrap = tile.querySelector(IM_SEARCH_PRICE_SELECTOR);
+	if (!priceWrap) return;
+	let btn = priceWrap.querySelector(`.${MONEYBAG_CLASS}`);
+	if (!btn) {
+	  btn = document.createElement('a');
+	  btn.className = MONEYBAG_CLASS;
+	  btn.textContent = '💰';
+	  btn.title = 'Search Item Market for this stat range';
+	  priceWrap.appendChild(btn);
+	}
+	btn.href = url;
+	btn.target = '_blank';
+	btn.rel = 'noopener noreferrer';
+	}
+
 	function findImageAnchor(root) {
 	if (!root) return null;
 	const direct =
@@ -680,7 +698,11 @@
 	for (const tile of document.querySelectorAll(IM_SEARCH_TILE_SELECTOR)) {
 	  const itemId = getItemId(tile);
 	  if (!itemId) continue;
-	  applyBadge(tile, imGetRollStats(tile), itemId);
+	  const stats = imGetRollStats(tile);
+	  applyBadge(tile, stats, itemId);
+	  if (stats.isWeapon || stats.isArmor) {
+		upsertPriceMoneybag(tile, buildMarketUrl(itemId, stats));
+	  }
 	}
 	}
 
