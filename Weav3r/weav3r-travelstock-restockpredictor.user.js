@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
-// @version      1.2.0
+// @version      1.2.4
 // @description  Adds predicted restock time, sell-out estimate, and "fly now" stock-on-arrival check based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -312,36 +312,49 @@
 		return null;
 	}
 
-	function findSelloutInChartData(data) {
-		if (!data?.length || typeof data[0] !== 'object') return null;
-		const keys = Object.keys(data[0]);
+function findSelloutInChartData(data, ticks) {
+	if (!data?.length || typeof data[0] !== 'object') return null;
+	const keys = Object.keys(data[0]);
 
-		// Identify which key holds stock (numeric, goes to 0 at end)
-		const stockKey = keys.find(k => {
-			const vals = data.map(d => d[k]);
-			return vals.every(v => typeof v === 'number') &&
-				vals.some(v => v > 0) &&
-				vals[vals.length - 1] === 0;
-		});
-		if (!stockKey) return null;
+	// Identify which key holds stock (numeric, goes to 0 at end)
+	const stockKey = keys.find(k => {
+		const vals = data.map(d => d[k]);
+		return vals.every(v => typeof v === 'number') &&
+			vals.some(v => v > 0) &&
+			vals[vals.length - 1] === 0;
+	});
+	if (!stockKey) return null;
 
-		// Identify which key holds time (string HH:MM or unix timestamp)
-		const timeKey = keys.find(k => {
-			if (k === stockKey) return false;
-			const v = data[0][k];
-			return (typeof v === 'number' && v > 1e9) ||
-				(typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v));
-		});
-		if (!timeKey) return null;
+	// Identify which key holds time (string HH:MM or unix timestamp)
+	const timeKey = keys.find(k => {
+		if (k === stockKey) return false;
+		const v = data[0][k];
+		return (typeof v === 'number' && v > 1e9) ||
+			(typeof v === 'string' && /^\d{1,2}:\d{2}/.test(v));
+	});
+	if (!timeKey) return null;
 
-		// Last transition: stock > 0 → stock = 0
-		let rawMins = null;
-		for (let i = 1; i < data.length; i++) {
-			if (data[i][stockKey] === 0 && data[i - 1][stockKey] > 0) {
-				rawMins = rawMinutesFromValue(data[i][timeKey]);
+	const approxNow = ticks[ticks.length - 1].minutes;
+	let bestPast = null;
+	let bestFuture = null;
+
+	for (let i = 1; i < data.length; i++) {
+		if (data[i][stockKey] === 0 && data[i - 1][stockKey] > 0) {
+			const rawMins = rawMinutesFromValue(data[i - 1][timeKey]) || rawMinutesFromValue(data[i][timeKey]);
+			if (rawMins === null) continue;
+
+			const dayOffset = Math.round((approxNow - rawMins) / 1440) * 1440;
+			const selloutMinutes = rawMins + dayOffset;
+
+			if (selloutMinutes <= approxNow) {
+				bestPast = bestPast === null ? selloutMinutes : Math.max(bestPast, selloutMinutes);
+			} else {
+				bestFuture = bestFuture === null ? selloutMinutes : Math.min(bestFuture, selloutMinutes);
 			}
 		}
-		return rawMins;
+	}
+
+	return bestPast !== null ? bestPast : bestFuture;
 	}
 
 	function getSelloutFromFiber(svg, ticks) {
@@ -357,11 +370,8 @@
 		for (let depth = 0; fiber && depth < 80; depth++) {
 			const data = fiber.memoizedProps?.data;
 			if (Array.isArray(data) && data.length > 5) {
-				const rawMins = findSelloutInChartData(data);
-				if (rawMins !== null) {
-					const approxNow = ticks[ticks.length - 1].minutes;
-					const dayOffset = Math.round((approxNow - rawMins) / 1440) * 1440;
-					const minutes = rawMins + dayOffset;
+				const minutes = findSelloutInChartData(data, ticks);
+				if (minutes !== null) {
 					return { label: minutesToHHMM(minutes), minutes, source: 'fiber' };
 				}
 			}
@@ -478,18 +488,10 @@
 			cacheRestockWallClock(cacheKey, nextRestockMinutes, nowMinutes);
 		}
 
-		// ── Priority 2: cached wall-clock from a prior accurate reading ──────
-		if (!accurate) {
-			const cached = getCachedRestockWallClock(cacheKey);
-			if (cached !== null && cached > Date.now()) {
-				const minsFromNow = (cached - Date.now()) / 60000;
-				nextRestockMinutes = nowMinutes + minsFromNow;
-				lastSelloutStr = minutesToHHMM(nextRestockMinutes - delayMinutes);
-				accurate = true;
-			}
-		}
-
-		// ── Priority 3: React fiber chart data (actual timestamps) ───────────
+		// ── Priority 2: React fiber chart data (actual timestamps) ───────────
+		// Checked before the cache because it reads the live chart on every
+		// render — a stale cache from a prior restock/sellout cycle would
+		// otherwise win just because it hasn't "expired" yet.
 		if (!accurate) {
 			const fiberInfo = getSelloutFromFiber(svg, ticks);
 			if (fiberInfo) {
@@ -497,6 +499,19 @@
 				lastSelloutStr = fiberInfo.label;
 				accurate = true;
 				cacheRestockWallClock(cacheKey, nextRestockMinutes, nowMinutes);
+			}
+		}
+
+		// ── Priority 3: cached wall-clock from a prior accurate reading ──────
+		// Fallback for when fiber data isn't parseable (e.g. chart not yet
+		// mounted with data in the expected shape).
+		if (!accurate) {
+			const cached = getCachedRestockWallClock(cacheKey);
+			if (cached !== null && cached > Date.now()) {
+				const minsFromNow = (cached - Date.now()) / 60000;
+				nextRestockMinutes = nowMinutes + minsFromNow;
+				lastSelloutStr = minutesToHHMM(nextRestockMinutes - delayMinutes);
+				accurate = true;
 			}
 		}
 
@@ -524,15 +539,16 @@
 			travelMinutes = travelTimeText ? parseDelayToMinutes(travelTimeText) : null;
 			travelLabel = travelTimeText ? `${travelTimeText} (site)` : null;
 		}
-		// When travel time > remaining window, the departure for the next restock
-		// is already in the past. Advance by full cycles (sellOut + delay) until
-		// the departure is in the future again.
+		// Only skip to a future cycle if departing right now would still miss
+		// the stock window entirely (arriving after it has sold out again).
+		// Arriving any time between restock and the next sell-out still gets
+		// stock, even if that's after the restock instant itself.
 		let targetRestockMinutes = nextRestockMinutes;
 		let cyclesSkipped = 0;
 		if (travelMinutes != null && sellOutMinutes != null) {
 			const cyclePeriod = delayMinutes + sellOutMinutes;
 			if (cyclePeriod > 0) {
-				while ((targetRestockMinutes - travelMinutes) < nowMinutes && cyclesSkipped < 50) {
+				while ((targetRestockMinutes + sellOutMinutes - travelMinutes) < nowMinutes && cyclesSkipped < 50) {
 					targetRestockMinutes += cyclePeriod;
 					cyclesSkipped++;
 				}
@@ -541,8 +557,11 @@
 
 		const targetRestockStr = minutesToHHMM(targetRestockMinutes);
 		const minsUntil = Math.round(targetRestockMinutes - nowMinutes);
+		// "Depart by" is the ideal moment to arrive right as it restocks; if
+		// that moment already passed (but stock hasn't sold out again), the
+		// best you can do is leave now, so clamp to nowMinutes.
 		const leaveByStr = travelMinutes != null
-			? minutesToHHMM(targetRestockMinutes - travelMinutes)
+			? minutesToHHMM(Math.max(targetRestockMinutes - travelMinutes, nowMinutes))
 			: null;
 
 		function statusFor(mins) {
