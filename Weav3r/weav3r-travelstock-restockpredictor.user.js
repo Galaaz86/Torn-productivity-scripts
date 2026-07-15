@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
-// @version      1.2.4
+// @version      1.3.0
 // @description  Adds predicted restock time, sell-out estimate, and "fly now" stock-on-arrival check based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -143,8 +143,15 @@
 			const v = (params.get(k) || '').toLowerCase().replace(/[-_]/g, ' ');
 			if (MODE_MAP[v] !== undefined) return v;
 		}
-		// Weav3r uses inline styles for selection state — the active button has
-		// "var(--accent-primary)" in its style whereas inactive buttons use
+		// Current markup: a ".ts-trip__modes" button group where the active
+		// button carries the "ts-trip__mode--on" class.
+		const activeModeBtn = document.querySelector('.ts-trip__mode--on, .ts-trip__mode.ts-trip__mode--on');
+		if (activeModeBtn) {
+			const text = activeModeBtn.textContent.trim().toLowerCase();
+			if (MODE_MAP[text] !== undefined) return text;
+		}
+		// Legacy markup: inline styles for selection state — the active button
+		// had "var(--accent-primary)" in its style whereas inactive buttons used
 		// "var(--text-secondary)" and "border: 1px solid transparent".
 		// Find the "Travel time" label, then check its sibling button group.
 		const travelLabel = [...document.querySelectorAll('p')].find(p =>
