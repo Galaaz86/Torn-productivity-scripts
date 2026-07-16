@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
-// @version      1.3.0
+// @version      1.3.1
 // @description  Adds predicted restock time, sell-out estimate, and "fly now" stock-on-arrival check based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -45,9 +45,10 @@
 	};
 
 	const MODE_MAP = {
-		'standard': 0, 'airstrip': 1,
+		'standard': 0, 'std': 0,
+		'airstrip': 1, 'air': 1,
 		'wlt': 2, 'wlt benefit': 2,
-		'business': 3, 'business class': 3,
+		'business': 3, 'business class': 3, 'biz': 3,
 	};
 
 	function resolveCity(raw) {
@@ -143,7 +144,18 @@
 			const v = (params.get(k) || '').toLowerCase().replace(/[-_]/g, ' ');
 			if (MODE_MAP[v] !== undefined) return v;
 		}
-		// Current markup: a ".ts-trip__modes" button group where the active
+		// Current markup: a `role="radiogroup"` "Trip" segmented control whose
+		// active button carries `aria-checked="true"` / `data-active="true"`
+		// and shows an abbreviated label (Std/Air/WLT/Biz) via `title` or text.
+		const tripGroup = document.querySelector('[role="radiogroup"][aria-label="Trip"]');
+		if (tripGroup) {
+			const activeBtn = tripGroup.querySelector('[aria-checked="true"], [data-active="true"]');
+			if (activeBtn) {
+				const label = (activeBtn.getAttribute('title') || activeBtn.textContent || '').trim().toLowerCase();
+				if (MODE_MAP[label] !== undefined) return label;
+			}
+		}
+		// Legacy markup: a ".ts-trip__modes" button group where the active
 		// button carries the "ts-trip__mode--on" class.
 		const activeModeBtn = document.querySelector('.ts-trip__mode--on, .ts-trip__mode.ts-trip__mode--on');
 		if (activeModeBtn) {
