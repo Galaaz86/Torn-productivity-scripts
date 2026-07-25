@@ -1,14 +1,17 @@
 // ==UserScript==
 // @name         Torn Confirm Helper
 // @namespace    https://www.torn.com/
-// @version      2.1.1
+// @version      2.2.0
 // @description  Shows a full-screen click zone on purchase/sell confirmations — left click to confirm, right click or Esc to cancel
 // @author       Galaaz86 [4178341]
 // @license      MIT License
 // @match        https://www.torn.com/bazaar.php*
 // @match        https://www.torn.com/item.php*
+// @match        https://www.torn.com/page.php?sid=travel*
 // @grant        none
 // @run-at       document-idle
+// @downloadURL https://update.greasyfork.org/scripts/579215/Torn%20Confirm%20Helper.user.js
+// @updateURL https://update.greasyfork.org/scripts/579215/Torn%20Confirm%20Helper.meta.js
 // ==/UserScript==
 
 (function () {

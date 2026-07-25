@@ -8,6 +8,8 @@
 // @match        https://www.torn.com/trade.php*
 // @grant        none
 // @run-at       document-idle
+// @downloadURL https://update.greasyfork.org/scripts/580128/Torn%20Trade%20Max-Fill.user.js
+// @updateURL https://update.greasyfork.org/scripts/580128/Torn%20Trade%20Max-Fill.meta.js
 // ==/UserScript==
 
 (function () {

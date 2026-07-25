@@ -8,6 +8,8 @@
 // @license      MIT License
 // @match        https://www.torn.com/page.php?sid=crimes*
 // @grant        none
+// @downloadURL https://update.greasyfork.org/scripts/578990/Torn%20Pickpocketing%20Coloring.user.js
+// @updateURL https://update.greasyfork.org/scripts/578990/Torn%20Pickpocketing%20Coloring.meta.js
 // ==/UserScript==
 
 (function() {

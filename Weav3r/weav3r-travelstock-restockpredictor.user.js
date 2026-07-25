@@ -2,7 +2,7 @@
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
 // @icon         https://weav3r.dev/brand/tornw3b-mark.png
-// @version      1.5.0
+// @version      1.5.2
 // @description  Adds predicted restock time, sell-out estimate, and "fly now" stock-on-arrival check based on last sell-out + restock delay from the stock chart
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -28,7 +28,7 @@
 		'tokyo':         [213, 150, 107,  64],
 		'beijing':       [229, 160, 115,  68],
 		'dubai':         [257, 180, 128,  77],
-		'johannesburg':  [281, 197, 141,  84],
+		'johannesburg':  [281, 197, 141,  84]
 	};
 
 	const CITY_ALIASES = {
@@ -480,6 +480,25 @@ function findSelloutInChartData(data, ticks) {
 		return { label: minutesToHHMM(minutes), minutes, source: 'svg' };
 	}
 
+	// Advance a restock→sell-out cycle forward until `refMinutes` falls before
+	// the window's empty time — used to find the cycle relevant to "now" or to
+	// a future arrival time. A currently-live stock window (restockMinutes in
+	// the past) means the *next* restock is really after this stock sells out.
+	function advanceToCycle(startRestockMinutes, sellOutMinutes, delayMinutes, estEmptyMinutes, nowMinutes, refMinutes) {
+		const cyclePeriod = delayMinutes + sellOutMinutes;
+		let restockMinutes = startRestockMinutes;
+		let emptyMinutes = (restockMinutes <= nowMinutes && estEmptyMinutes != null)
+			? nowMinutes + estEmptyMinutes
+			: restockMinutes + sellOutMinutes;
+		let cycles = 0;
+		while (refMinutes >= emptyMinutes && cyclePeriod > 0 && cycles < 50) {
+			restockMinutes += cyclePeriod;
+			emptyMinutes = restockMinutes + sellOutMinutes;
+			cycles++;
+		}
+		return { restockMinutes, emptyMinutes, cycles };
+	}
+
 	// ── Main panel processor ──────────────────────────────────────────────────
 
 	function processPanel(panel) {
@@ -511,6 +530,10 @@ function findSelloutInChartData(data, ticks) {
 		);
 		const sellOutText = sellOutLabel?.nextElementSibling?.textContent?.trim() || '';
 		const sellOutMinutes = sellOutText ? parseDelayToMinutes(sellOutText) : null;
+
+		const emptyInLabelP = [...panel.querySelectorAll('p')].find(p => p.textContent.trim() === 'Est. Empty In');
+		const emptyInText = emptyInLabelP?.nextElementSibling?.textContent?.trim() || '';
+		const estEmptyMinutes = emptyInText && emptyInText !== 'Any moment' ? parseDelayToMinutes(emptyInText) : null;
 
 		const ticks = buildTimeTicks(svg);
 		if (ticks.length < 2) return;
@@ -571,7 +594,15 @@ function findSelloutInChartData(data, ticks) {
 
 		existingBanner?.remove();
 
-		const nextRestockStr = minutesToHHMM(nextRestockMinutes);
+		// Simple "next restock" — ignores travel time / cycle-skipping. If the
+		// detected restock event is already in the past, stock is currently
+		// live, so the *next* restock is really after it sells out again.
+		let simpleNextRestockMinutes = nextRestockMinutes;
+		if (sellOutMinutes != null) {
+			const cycle = advanceToCycle(nextRestockMinutes, sellOutMinutes, delayMinutes, estEmptyMinutes, nowMinutes, nowMinutes);
+			simpleNextRestockMinutes = cycle.restockMinutes > nowMinutes ? cycle.restockMinutes : cycle.emptyMinutes + delayMinutes;
+		}
+		const simpleNextRestockStr = minutesToHHMM(simpleNextRestockMinutes);
 
 		const flightInfo = getFlightInfo(panel);
 		let travelMinutes, travelLabel;
@@ -605,6 +636,7 @@ function findSelloutInChartData(data, ticks) {
 
 		const targetRestockStr = minutesToHHMM(targetRestockMinutes);
 		const minsUntil = Math.round(targetRestockMinutes - nowMinutes);
+		const minsUntilNextRestock = Math.round(simpleNextRestockMinutes - nowMinutes);
 		// "Depart by" is the ideal moment to arrive right as it restocks; if
 		// that moment already passed (but stock hasn't sold out again), the
 		// best you can do is leave now, so clamp to nowMinutes.
@@ -644,24 +676,11 @@ function findSelloutInChartData(data, ticks) {
 			const restockQtyLabelP = [...panel.querySelectorAll('p')].find(p => p.textContent.trim() === 'Restock Qty');
 			const maxStock = parseInt((restockQtyLabelP?.nextElementSibling?.textContent || '').replace(/[^\d]/g, ''), 10) || null;
 
-			const emptyInLabelP = [...panel.querySelectorAll('p')].find(p => p.textContent.trim() === 'Est. Empty In');
-			const emptyInText = emptyInLabelP?.nextElementSibling?.textContent?.trim() || '';
-			const estEmptyMinutes = emptyInText && emptyInText !== 'Any moment' ? parseDelayToMinutes(emptyInText) : null;
-
 			if (maxStock && !isNaN(rateHigh)) {
-				const cyclePeriod = delayMinutes + sellOutMinutes;
-				let windowRestockMinutes = nextRestockMinutes; // R0: last-known restock event, may be past (stock live) or future (still waiting)
-				let windowEmptyMinutes = (windowRestockMinutes <= nowMinutes && estEmptyMinutes != null)
-					? nowMinutes + estEmptyMinutes
-					: windowRestockMinutes + sellOutMinutes;
-
 				const arrivalMinutes = nowMinutes + travelMinutes;
-				let flyCycles = 0;
-				while (arrivalMinutes >= windowEmptyMinutes && cyclePeriod > 0 && flyCycles < 50) {
-					windowRestockMinutes += cyclePeriod;
-					windowEmptyMinutes = windowRestockMinutes + sellOutMinutes;
-					flyCycles++;
-				}
+				// R0: last-known restock event, may be past (stock live) or future (still waiting)
+				const { restockMinutes: windowRestockMinutes, emptyMinutes: windowEmptyMinutes } =
+					advanceToCycle(nextRestockMinutes, sellOutMinutes, delayMinutes, estEmptyMinutes, nowMinutes, arrivalMinutes);
 
 				const arrivalStr = minutesToHHMM(arrivalMinutes);
 				const arrivesWithStock = arrivalMinutes >= windowRestockMinutes && arrivalMinutes < windowEmptyMinutes;
@@ -731,6 +750,10 @@ function findSelloutInChartData(data, ticks) {
 						<p style="font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-secondary);margin:0 0 2px 0;">Est. End of Stock</p>
 						<p style="font-size:13px;font-weight:700;color:${color};margin:0;">
 							${endOfStockStr} local &nbsp;<span style="font-size:11px;font-weight:400;color:var(--text-secondary);">(${statusFor(minsUntilEnd)})</span>
+						</p>
+						<p style="font-size:11px;font-weight:600;color:var(--text-secondary);margin:4px 0 1px 0;">
+							Next Restock: <span style="color:${color}">${simpleNextRestockStr} local</span>
+							<span style="font-size:9px;font-weight:400;opacity:0.65;"> (${statusFor(minsUntilNextRestock)})</span>
 						</p>
 						<p style="font-size:9px;color:var(--text-secondary);margin:2px 0 0 0;">${targetRestockStr} + ${sellOutText} sell out time</p>
 					</div>` : ''}
