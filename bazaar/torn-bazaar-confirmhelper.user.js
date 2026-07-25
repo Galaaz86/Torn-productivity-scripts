@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Confirm Helper
 // @namespace    https://www.torn.com/
-// @version      2.2.0
+// @version      2.3.0
 // @description  Shows a full-screen click zone on purchase/sell confirmations — left click to confirm, right click or Esc to cancel
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -61,6 +61,20 @@
 			if (yesBtn) return { dialog: actionWrap, yesBtn, noBtn };
 		}
 
+		// Travel page: React confirmPanel with CSS-module hashed classnames
+		// (e.g. "confirmPanel___rpB5S", "yesNoButton___B09cS yes___rYTiQ").
+		// Match on the stable name prefix so a hash change on Torn's end doesn't break this.
+		const confirmPanel = document.querySelector('[class*="confirmPanel___"]');
+		if (confirmPanel) {
+			let yesBtn = null, noBtn = null;
+			confirmPanel.querySelectorAll('button[class*="yesNoButton___"]').forEach(btn => {
+				const classes = btn.className.split(/\s+/);
+				if (classes.some(c => /^yes___/.test(c))) yesBtn = btn;
+				if (classes.some(c => /^no___/.test(c))) noBtn = btn;
+			});
+			if (yesBtn) return { dialog: confirmPanel, yesBtn, noBtn };
+		}
+
 		return null;
 	}
 
@@ -112,7 +126,11 @@
 			if (noBtn) noBtn.click();
 			removeOverlay();
 
-			if (dialog && !dialog.matches('[data-testid="buy-confirmation"]')) {
+			const isReactManaged = dialog && (
+				dialog.matches('[data-testid="buy-confirmation"]') ||
+				dialog.matches('[class*="confirmPanel___"]')
+			);
+			if (dialog && !isReactManaged) {
 				// item.php classic dialogs have no built-in cancel path — Torn never
 				// hides the dialog on "No". Force-hide it directly after the transition.
 				setTimeout(() => {
@@ -146,13 +164,15 @@
 
 	const observer = new MutationObserver(function (mutations) {
 		for (const mutation of mutations) {
-			// Bazaar: React injects the dialog as a new node
+			// Bazaar / Travel: React injects the dialog as a new node
 			if (mutation.type === 'childList') {
 				for (const node of mutation.addedNodes) {
 					if (node.nodeType !== Node.ELEMENT_NODE) continue;
 					if (
 						node.matches?.('[data-testid="buy-confirmation"]') ||
-						node.querySelector?.('[data-testid="buy-confirmation"]')
+						node.querySelector?.('[data-testid="buy-confirmation"]') ||
+						node.matches?.('[class*="confirmPanel___"]') ||
+						node.querySelector?.('[class*="confirmPanel___"]')
 					) {
 						setTimeout(createOverlay, 80);
 						return;
