@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Confirm Helper
 // @namespace    https://www.torn.com/
-// @version      2.3.0
+// @version      2.5.0
 // @description  Shows a full-screen click zone on purchase/sell confirmations — left click to confirm, right click or Esc to cancel
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -72,7 +72,34 @@
 				if (classes.some(c => /^yes___/.test(c))) yesBtn = btn;
 				if (classes.some(c => /^no___/.test(c))) noBtn = btn;
 			});
+			if (!yesBtn) {
+				// Alternate confirmPanel variant (e.g. "travel to <destination>"):
+				// a buttons___ wrap holding a plain "Continue" button and a
+				// hashed "Cancel" button instead of yes___/no___ classes.
+				const buttonsWrap = confirmPanel.querySelector('[class*="buttons___"]');
+				if (buttonsWrap) {
+					const btns = buttonsWrap.querySelectorAll('button');
+					if (btns.length >= 2) {
+						yesBtn = btns[0];
+						noBtn = btns[1];
+					}
+				}
+			}
 			if (yesBtn) return { dialog: confirmPanel, yesBtn, noBtn };
+		}
+
+		// Travel page: "Travel back" confirmCancel dialog. The confirm button has no
+		// distinguishing class (just "torn-btn"), so identify it as "whichever button
+		// isn't the cancelButton___ one".
+		const confirmCancel = document.querySelector('[class*="confirmCancel___"]');
+		if (confirmCancel) {
+			let yesBtn = null, noBtn = null;
+			confirmCancel.querySelectorAll('button').forEach(btn => {
+				const classes = btn.className.split(/\s+/);
+				if (classes.some(c => /^cancelButton___/.test(c))) noBtn = btn;
+				else yesBtn = btn;
+			});
+			if (yesBtn) return { dialog: confirmCancel, yesBtn, noBtn };
 		}
 
 		return null;
@@ -128,7 +155,8 @@
 
 			const isReactManaged = dialog && (
 				dialog.matches('[data-testid="buy-confirmation"]') ||
-				dialog.matches('[class*="confirmPanel___"]')
+				dialog.matches('[class*="confirmPanel___"]') ||
+				dialog.matches('[class*="confirmCancel___"]')
 			);
 			if (dialog && !isReactManaged) {
 				// item.php classic dialogs have no built-in cancel path — Torn never
@@ -172,7 +200,9 @@
 						node.matches?.('[data-testid="buy-confirmation"]') ||
 						node.querySelector?.('[data-testid="buy-confirmation"]') ||
 						node.matches?.('[class*="confirmPanel___"]') ||
-						node.querySelector?.('[class*="confirmPanel___"]')
+						node.querySelector?.('[class*="confirmPanel___"]') ||
+						node.matches?.('[class*="confirmCancel___"]') ||
+						node.querySelector?.('[class*="confirmCancel___"]')
 					) {
 						setTimeout(createOverlay, 80);
 						return;
