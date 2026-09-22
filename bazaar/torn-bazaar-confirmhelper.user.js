@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Confirm Helper
 // @namespace    https://www.torn.com/
-// @version      2.4.0
+// @version      2.5.0
 // @description  Shows a full-screen click zone on purchase/sell confirmations — left click to confirm, right click or Esc to cancel
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -72,6 +72,19 @@
 				if (classes.some(c => /^yes___/.test(c))) yesBtn = btn;
 				if (classes.some(c => /^no___/.test(c))) noBtn = btn;
 			});
+			if (!yesBtn) {
+				// Alternate confirmPanel variant (e.g. "travel to <destination>"):
+				// a buttons___ wrap holding a plain "Continue" button and a
+				// hashed "Cancel" button instead of yes___/no___ classes.
+				const buttonsWrap = confirmPanel.querySelector('[class*="buttons___"]');
+				if (buttonsWrap) {
+					const btns = buttonsWrap.querySelectorAll('button');
+					if (btns.length >= 2) {
+						yesBtn = btns[0];
+						noBtn = btns[1];
+					}
+				}
+			}
 			if (yesBtn) return { dialog: confirmPanel, yesBtn, noBtn };
 		}
 
