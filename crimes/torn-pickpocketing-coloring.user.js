@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Torn Pickpocketing Coloring
-// @version      1.1.0
+// @version      1.1.1
 // @namespace    https://www.torn.com/
 // @description  Color codes crimes based on difficulty
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=torn.com
@@ -53,8 +53,12 @@
 		return tierMaps[4];
 	}
 
+	function isPickpocketingPage() {
+		return window.location.hash.startsWith('#/pickpocketing');
+	}
+
 	function updateDivColors() {
-		if (!window.location.href.includes("pickpocketing")) return;
+		if (!isPickpocketingPage()) return;
 
 		const sideColorMap = getSideColorMap();
 		const divElements = document.querySelectorAll('[class*="titleAndProps___"]:not(.processed)');
@@ -95,6 +99,21 @@
 	}
 
 	const observer = new MutationObserver(schedule);
-	observer.observe(document.body, { childList: true, subtree: true });
-	updateDivColors();
+	let observing = false;
+
+	function syncObserver() {
+		if (isPickpocketingPage()) {
+			if (!observing) {
+				observer.observe(document.body, { childList: true, subtree: true });
+				observing = true;
+			}
+			updateDivColors();
+		} else if (observing) {
+			observer.disconnect();
+			observing = false;
+		}
+	}
+
+	window.addEventListener('hashchange', syncObserver);
+	syncObserver();
 })();

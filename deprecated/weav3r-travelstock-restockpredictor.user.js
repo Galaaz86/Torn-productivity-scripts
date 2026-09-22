@@ -1,3 +1,7 @@
+/*
+DEPRECATED: This userscript is no longer maintained (2026-09-22).
+Remove or replace with an updated script as needed.
+*/
 // ==UserScript==
 // @name         TornW3B Travel Stock - Restock Predictor
 // @namespace    https://weav3r.dev/
