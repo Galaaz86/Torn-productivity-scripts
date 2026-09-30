@@ -1,7 +1,8 @@
 // ==UserScript==
 // @name         Torn Blackjack - Double and Reset
 // @namespace    https://www.torn.com/
-// @version      1.1.0
+// @version      1.2.0
+// @license      MIT License
 // @description  Sets a base, doubles the bet, and resets to the base.
 // @match        https://www.torn.com/page.php?sid=blackjack*
 // @match        https://torn.com/page.php?sid=blackjack*
@@ -9,6 +10,8 @@
 // @grant        GM_setValue
 // @run-at       document-idle
 // @noframes
+// @downloadURL https://update.greasyfork.org/scripts/598044/Torn%20Blackjack%20-%20Double%20and%20Reset.user.js
+// @updateURL https://update.greasyfork.org/scripts/598044/Torn%20Blackjack%20-%20Double%20and%20Reset.meta.js
 // ==/UserScript==
 
 (() => {
@@ -18,9 +21,7 @@
 	host.style.cssText = `
 		position: fixed;
 		top: 155px;
-		right: 24px;
-		width: 240px;
-		max-width: calc(100vw - 32px);
+		right: 8px;
 		z-index: 99999;
 		display: none;
 	`;
@@ -31,31 +32,79 @@
 		<style>
 			* { box-sizing: border-box; }
 
-			section {
+			.bar {
+				display: flex;
+				flex-direction: column;
+				gap: 6px;
+				width: 52px;
+				padding: 4px 4px 6px;
 				background: #242424;
-				color: white;
 				border: 1px solid #666;
 				border-radius: 10px;
-				padding: 16px;
-				font: 14px Arial, sans-serif;
-				box-shadow: 0 5px 20px #0008;
+				box-shadow: 0 3px 12px #0008;
+				font: 13px Arial, sans-serif;
 			}
 
-			h3 {
-				margin: 0 0 14px;
+			.grip {
+				height: 16px;
+				color: #999;
+				text-align: center;
+				line-height: 16px;
+				letter-spacing: 2px;
 				cursor: move;
 				user-select: none;
 				touch-action: none;
 			}
 
+			button {
+				height: 38px;
+				padding: 0;
+				background: #54863b;
+				color: white;
+				border: none;
+				border-radius: 6px;
+				cursor: pointer;
+				font: bold 13px Arial, sans-serif;
+				touch-action: manipulation;
+			}
+
+			#set { background: #3b5f86; }
+			#set.active { background: #5a8cc4; }
+			#reset { background: #555; }
+			button:hover { filter: brightness(1.2); }
+
+			.pop {
+				position: absolute;
+				top: 0;
+				right: calc(100% + 6px);
+				background: #242424;
+				color: white;
+				border: 1px solid #666;
+				border-radius: 10px;
+				box-shadow: 0 3px 12px #0008;
+				font: 13px Arial, sans-serif;
+			}
+
+			.pop.flip {
+				right: auto;
+				left: calc(100% + 6px);
+			}
+
+			.pop[hidden] { display: none; }
+
+			#flyout {
+				width: 190px;
+				padding: 10px;
+			}
+
 			label {
 				display: block;
-				margin-bottom: 7px;
+				margin-bottom: 6px;
 			}
 
 			input {
 				width: 100%;
-				padding: 10px;
+				padding: 8px;
 				background: #111;
 				color: white;
 				border: 1px solid #777;
@@ -63,79 +112,101 @@
 				font-size: 16px;
 			}
 
-			.buttons {
-				display: flex;
-				gap: 8px;
-				margin-top: 12px;
-			}
-
-			button {
-				flex: 1;
-				padding: 11px 5px;
-				background: #54863b;
-				color: white;
-				border: none;
-				border-radius: 5px;
-				cursor: pointer;
-				font-weight: bold;
-			}
-
-			#reset { background: #555; }
-			button:hover { filter: brightness(1.2); }
-
-			p {
-				margin: 12px 0 0;
+			#status {
+				margin: 8px 0 0;
 				font-size: 12px;
-				line-height: 1.4;
+				line-height: 1.3;
+			}
+
+			#toast {
+				width: max-content;
+				max-width: 180px;
+				padding: 6px 8px;
+				font-size: 12px;
+				line-height: 1.3;
+				pointer-events: none;
 			}
 		</style>
 
-		<section>
-			<h3>Blackjack · Bet</h3>
+		<div class="bar">
+			<div class="grip" title="Drag">⋮⋮</div>
+			<button id="set" type="button" title="Set base value">Set</button>
+			<button id="double" type="button" title="Double the bet">x2</button>
+			<button id="reset" type="button" title="Reset to base">Base</button>
+		</div>
 
+		<div id="flyout" class="pop" hidden>
 			<label for="base">Base value ($)</label>
 			<input id="base" type="text"
-				   inputmode="numeric" placeholder="500000">
-
-			<div class="buttons">
-				<button id="double" type="button">Double</button>
-				<button id="reset" type="button">Reset to base</button>
-			</div>
-
+				   inputmode="numeric" placeholder="100000">
 			<p id="status" role="status" aria-live="polite">
 				Set the base and use the buttons.
 			</p>
-		</section>
+		</div>
+
+		<div id="toast" class="pop" hidden></div>
 	`;
 
 	document.body.appendChild(host);
 
+	const flyout = panel.querySelector('#flyout');
+	const toast = panel.querySelector('#toast');
+	const setButton = panel.querySelector('#set');
+
+	// Opens popups on the right of the bar when it sits near the left edge.
+	function placePopups() {
+		const flip = host.getBoundingClientRect().left < 200;
+		flyout.classList.toggle('flip', flip);
+		toast.classList.toggle('flip', flip);
+	}
+
+	function clampPosition(left, top) {
+		const maxLeft = window.innerWidth - host.offsetWidth;
+		const maxTop = window.innerHeight - host.offsetHeight;
+
+		host.style.left = `${Math.min(Math.max(left, 0), Math.max(maxLeft, 0))}px`;
+		host.style.top = `${Math.min(Math.max(top, 0), Math.max(maxTop, 0))}px`;
+		host.style.right = 'auto';
+	}
+
+	const savedPosition = GM_getValue('position', null);
+
+	function restorePosition() {
+		if (!savedPosition || !host.offsetWidth) return;
+		clampPosition(savedPosition.left, savedPosition.top);
+	}
+
+	window.addEventListener('resize', () => {
+		if (host.style.right !== 'auto') return;
+		const rect = host.getBoundingClientRect();
+		clampPosition(rect.left, rect.top);
+		placePopups();
+	});
+
 	(function enableDrag() {
-		const handle = panel.querySelector('h3');
+		const handle = panel.querySelector('.grip');
 		let offsetX = 0;
 		let offsetY = 0;
 
 		function onPointerMove(event) {
-			const maxLeft = window.innerWidth - host.offsetWidth;
-			const maxTop = window.innerHeight - host.offsetHeight;
-
-			host.style.left = `${Math.min(Math.max(event.clientX - offsetX, 0), maxLeft)}px`;
-			host.style.top = `${Math.min(Math.max(event.clientY - offsetY, 0), maxTop)}px`;
+			clampPosition(event.clientX - offsetX, event.clientY - offsetY);
+			placePopups();
 		}
 
 		function onPointerUp(event) {
 			handle.releasePointerCapture(event.pointerId);
 			handle.removeEventListener('pointermove', onPointerMove);
 			handle.removeEventListener('pointerup', onPointerUp);
+
+			const rect = host.getBoundingClientRect();
+			GM_setValue('position', { left: rect.left, top: rect.top });
 		}
 
 		handle.addEventListener('pointerdown', event => {
 			if (event.button !== 0) return;
 
 			const rect = host.getBoundingClientRect();
-			host.style.left = `${rect.left}px`;
-			host.style.top = `${rect.top}px`;
-			host.style.right = 'auto';
+			clampPosition(rect.left, rect.top);
 
 			offsetX = event.clientX - rect.left;
 			offsetY = event.clientY - rect.top;
@@ -145,6 +216,14 @@
 			handle.addEventListener('pointerup', onPointerUp);
 		});
 	})();
+
+	setButton.addEventListener('click', () => {
+		const open = flyout.hidden;
+		flyout.hidden = !open;
+		setButton.classList.toggle('active', open);
+		toast.hidden = true;
+		placePopups();
+	});
 
 	const base = panel.querySelector('#base');
 	const status = panel.querySelector('#status');
@@ -185,9 +264,21 @@
 		return { visible, hidden };
 	}
 
+	let toastTimer = 0;
+
 	function message(text, error = false) {
+		const color = error ? '#ffb3a8' : '#d9e9ce';
 		status.textContent = text;
-		status.style.color = error ? '#ffb3a8' : '#d9e9ce';
+		status.style.color = color;
+
+		// With the Set panel closed, show feedback briefly next to the bar.
+		if (!flyout.hidden) return;
+		toast.textContent = text;
+		toast.style.color = color;
+		toast.hidden = false;
+		placePopups();
+		clearTimeout(toastTimer);
+		toastTimer = setTimeout(() => { toast.hidden = true; }, error ? 3000 : 1500);
 	}
 
 	base.addEventListener('input', () => {
@@ -296,8 +387,15 @@
 		'click', () => apply('reset')
 	);
 
+	let positioned = false;
+
 	function refresh() {
 		host.style.display = getFields().visible ? 'block' : 'none';
+
+		if (!positioned && host.offsetWidth) {
+			positioned = true;
+			restorePosition();
+		}
 	}
 
 	refresh();
