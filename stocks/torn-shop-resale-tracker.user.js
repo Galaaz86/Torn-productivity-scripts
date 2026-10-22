@@ -1,14 +1,14 @@
 // ==UserScript==
 // @name         Torn Abroad Shop Resale Tracker for Weaver
 // @namespace    https://weav3r.dev/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Finds market-to-shop profits and profitable country shop routes
 // @match        https://weav3r.dev/travel-stock*
 // @grant        none
 // @license      MIT
 // @run-at       document-idle
-// @downloadURL https://update.greasyfork.org/scripts/601493/Torn%20Abroad%20Shop%20Resale%20Tracker%20for%20Weaver.user.js
-// @updateURL https://update.greasyfork.org/scripts/601493/Torn%20Abroad%20Shop%20Resale%20Tracker%20for%20Weaver.meta.js
+// @downloadURL  https://update.greasyfork.org/scripts/601493/Torn%20Abroad%20Shop%20Resale%20Tracker%20for%20Weaver.user.js
+// @updateURL    https://update.greasyfork.org/scripts/601493/Torn%20Abroad%20Shop%20Resale%20Tracker%20for%20Weaver.meta.js
 // ==/UserScript==
 
 (function () {
@@ -33,53 +33,57 @@
 	const styles = `
 		#${LAUNCHER_ID} {
 			position: fixed; right: 18px; bottom: 18px; z-index: 2147483646;
-			border: 1px solid #d6ad48; border-radius: 9px; padding: 11px 16px;
-			background: #f3c75f; color: #171716; font: 700 14px/1.2 "Segoe UI", Arial, sans-serif;
+			border: 1px solid var(--primary, #60a5fa); border-radius: 9px; padding: 11px 16px;
+			background: var(--primary, #60a5fa); color: var(--primary-foreground, #0a0a0a);
+			font-family: inherit; font-size: 14px; font-weight: 700; line-height: 1.2;
 			box-shadow: 0 4px 18px #0008; cursor: pointer;
 		}
-		#${LAUNCHER_ID}:hover { background: #ffda78; }
+		#${LAUNCHER_ID}:hover { filter: brightness(1.08); }
 		#${ROOT_ID}, #${ROOT_ID} * { box-sizing: border-box; }
 		#${ROOT_ID} {
 			position: fixed; inset: 0; z-index: 2147483647; display: none;
-			background: #101419; color: #e7edf3; overflow: auto;
-			font: 14px/1.5 "Segoe UI", Arial, sans-serif;
+			background: var(--background, #0a0a0a); color: var(--foreground, #f0f0f0); overflow: auto;
+			font-family: inherit; font-size: 14px; line-height: 1.5;
 		}
 		#${ROOT_ID}.open { display: block; }
 		#${ROOT_ID} .tsr-main { width: min(1500px, 100% - 36px); margin: 0 auto; padding: 28px 0 48px; }
 		#${ROOT_ID} .tsr-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
-		#${ROOT_ID} h1 { margin: 0; color: #e7edf3; font: 750 clamp(24px, 4vw, 34px)/1.2 "Segoe UI", Arial, sans-serif; }
-		#${ROOT_ID} h2 { margin: 0; color: #e7edf3; font: 700 19px/1.3 "Segoe UI", Arial, sans-serif; }
-		#${ROOT_ID} p { margin: 7px 0 0; color: #9aa8b7; }
+		#${ROOT_ID} h1 { margin: 0; color: var(--foreground, #f0f0f0); font-family: inherit; font-size: clamp(24px, 4vw, 34px); font-weight: 750; line-height: 1.2; }
+		#${ROOT_ID} h2 { margin: 0; color: var(--foreground, #f0f0f0); font-family: inherit; font-size: 19px; font-weight: 700; line-height: 1.3; }
+		#${ROOT_ID} p { margin: 7px 0 0; color: var(--muted-foreground, #a0a0a0); }
 		#${ROOT_ID} button, #${ROOT_ID} input, #${ROOT_ID} select { font: inherit; }
 		#${ROOT_ID} button { cursor: pointer; }
 		#${ROOT_ID} .tsr-actions { display: flex; gap: 8px; }
-		#${ROOT_ID} .tsr-button { border: 1px solid #d6ad48; border-radius: 8px; padding: 9px 14px; background: #f3c75f; color: #171716; font-weight: 700; }
-		#${ROOT_ID} .tsr-button:hover { background: #ffda78; }
+		#${ROOT_ID} .tsr-button { border: 1px solid var(--primary, #60a5fa); border-radius: 8px; padding: 9px 14px; background: var(--primary, #60a5fa); color: var(--primary-foreground, #0a0a0a); font-weight: 700; }
+		#${ROOT_ID} .tsr-button:hover { filter: brightness(1.08); }
 		#${ROOT_ID} .tsr-button:disabled { cursor: wait; opacity: .65; }
-		#${ROOT_ID} .tsr-close { border: 1px solid #46515e; border-radius: 8px; padding: 8px 12px; background: #202833; color: #e7edf3; }
-		#${ROOT_ID} .tsr-status { min-height: 24px; margin: 0 0 14px; color: #9aa8b7; }
-		#${ROOT_ID} .tsr-status.error { color: #ff8a8a; }
+		#${ROOT_ID} .tsr-close { border: 1px solid var(--border, #2e2e2e); border-radius: 8px; padding: 8px 12px; background: var(--secondary, #111); color: var(--secondary-foreground, #f0f0f0); }
+		#${ROOT_ID} .tsr-close:hover { background: var(--accent, #2a2a2a); }
+		#${ROOT_ID} .tsr-status { min-height: 24px; margin: 0 0 14px; color: var(--muted-foreground, #a0a0a0); }
+		#${ROOT_ID} .tsr-status.error { color: var(--destructive, #f87171); }
 		#${ROOT_ID} .tsr-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
-		#${ROOT_ID} .tsr-card, #${ROOT_ID} .tsr-panel { border: 1px solid #303b48; border-radius: 10px; background: #191f27; }
+		#${ROOT_ID} .tsr-card, #${ROOT_ID} .tsr-panel { border: 1px solid var(--border, #2e2e2e); border-radius: 10px; background: var(--card, #1a1a1a); }
 		#${ROOT_ID} .tsr-card { padding: 13px 16px; }
-		#${ROOT_ID} .tsr-card-label { color: #9aa8b7; font-size: 12px; }
-		#${ROOT_ID} .tsr-card-value { color: #f3c75f; font-size: 24px; font-weight: 750; }
-		#${ROOT_ID} .tsr-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; color: #9aa8b7; }
-		#${ROOT_ID} .tsr-toolbar input, #${ROOT_ID} .tsr-toolbar select { min-height: 38px; border: 1px solid #303b48; border-radius: 7px; padding: 7px 9px; background: #191f27; color: #e7edf3; }
+		#${ROOT_ID} .tsr-card-label { color: var(--muted-foreground, #a0a0a0); font-size: 12px; }
+		#${ROOT_ID} .tsr-card-value { color: var(--primary, #60a5fa); font-size: 24px; font-weight: 750; }
+		#${ROOT_ID} .tsr-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; color: var(--muted-foreground, #a0a0a0); }
+		#${ROOT_ID} .tsr-toolbar input, #${ROOT_ID} .tsr-toolbar select { min-height: 38px; border: 1px solid var(--input, #2e2e2e); border-radius: 7px; padding: 7px 9px; background: var(--background, #0a0a0a); color: var(--foreground, #f0f0f0); }
 		#${ROOT_ID} .tsr-toolbar input { flex: 1 1 220px; }
 		#${ROOT_ID} .tsr-toolbar select { min-width: 145px; }
 		#${ROOT_ID} .tsr-panel { overflow: hidden; margin: 14px 0; }
 		#${ROOT_ID} .tsr-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; }
-		#${ROOT_ID} .tsr-panel-heading span { color: #9aa8b7; font-size: 12px; }
-		#${ROOT_ID} .tsr-table-wrap { max-height: 42vh; overflow: auto; border-top: 1px solid #303b48; }
+		#${ROOT_ID} .tsr-panel-heading span { color: var(--muted-foreground, #a0a0a0); font-size: 12px; }
+		#${ROOT_ID} .tsr-table-wrap { max-height: 42vh; overflow: auto; border-top: 1px solid var(--border, #2e2e2e); }
 		#${ROOT_ID} table { width: 100%; border-collapse: collapse; white-space: nowrap; font-size: 12px; }
-		#${ROOT_ID} th, #${ROOT_ID} td { padding: 9px 11px; border-bottom: 1px solid #28313b; text-align: left; }
-		#${ROOT_ID} th { position: sticky; top: 0; z-index: 1; background: #202833; color: #9aa8b7; font-weight: 650; }
+		#${ROOT_ID} th, #${ROOT_ID} td { padding: 9px 11px; border-bottom: 1px solid var(--border, #2e2e2e); text-align: left; }
+		#${ROOT_ID} th { position: sticky; top: 0; z-index: 1; background: var(--secondary, #111); color: var(--muted-foreground, #a0a0a0); font-weight: 650; }
 		#${ROOT_ID} td.numeric, #${ROOT_ID} th.numeric { text-align: right; font-variant-numeric: tabular-nums; }
-		#${ROOT_ID} tbody tr:hover { background: #202832; }
-		#${ROOT_ID} .tsr-profit { color: #61d39a; font-weight: 700; }
-		#${ROOT_ID} .tsr-empty { padding: 22px; color: #9aa8b7; text-align: center; }
-		#${ROOT_ID} .tsr-note { margin-top: 14px; padding: 12px 14px; border-left: 3px solid #f3c75f; background: #191f27; color: #9aa8b7; font-size: 12px; }
+		#${ROOT_ID} tbody tr:hover { background: var(--accent, #2a2a2a); }
+		#${ROOT_ID} .tsr-profit { color: #15803d; font-weight: 700; }
+		:root.dark #${ROOT_ID} .tsr-profit { color: #4ade80; }
+		#${ROOT_ID} .tsr-empty { padding: 22px; color: var(--muted-foreground, #a0a0a0); text-align: center; }
+		#${ROOT_ID} .tsr-note { margin-top: 14px; padding: 12px 14px; border-left: 3px solid var(--primary, #60a5fa); background: var(--card, #1a1a1a); color: var(--muted-foreground, #a0a0a0); font-size: 12px; }
+		#${ROOT_ID} .tsr-note a { color: var(--primary, #60a5fa); }
 		@media (max-width: 700px) {
 			#${ROOT_ID} .tsr-main { width: calc(100% - 20px); padding-top: 16px; }
 			#${ROOT_ID} .tsr-header { flex-direction: column; }
