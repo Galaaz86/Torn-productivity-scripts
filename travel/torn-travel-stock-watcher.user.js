@@ -8,6 +8,8 @@
 // @match        https://www.torn.com/page.php?sid=travel*
 // @grant        none
 // @run-at       document-idle
+// @downloadURL https://update.greasyfork.org/scripts/602011/Torn%20Travel%20Stock%20Restock%20Watcher.user.js
+// @updateURL https://update.greasyfork.org/scripts/602011/Torn%20Travel%20Stock%20Restock%20Watcher.meta.js
 // ==/UserScript==
 
 (function () {
