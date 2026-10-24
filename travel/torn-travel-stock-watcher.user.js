@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Travel Stock Restock Watcher
 // @namespace    https://www.torn.com/
-// @version      1.1.0
+// @version      1.0.0
 // @description  Watch travel-shop items and flash and sound an alert when their stock returns
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -125,30 +125,37 @@
 		nameCell.appendChild(control);
 	}
 
+	function playBeep(startTime) {
+		const oscillator = audioContext.createOscillator();
+		const filter = audioContext.createBiquadFilter();
+		const gain = audioContext.createGain();
+		const duration = 0.28;
+
+		oscillator.type = 'sawtooth';
+		oscillator.frequency.setValueAtTime(480, startTime);
+		oscillator.frequency.exponentialRampToValueAtTime(170, startTime + duration);
+		filter.type = 'bandpass';
+		filter.frequency.setValueAtTime(1100, startTime);
+		filter.frequency.exponentialRampToValueAtTime(600, startTime + duration);
+		filter.Q.setValueAtTime(1.4, startTime);
+		gain.gain.setValueAtTime(0.0001, startTime);
+		gain.gain.exponentialRampToValueAtTime(0.3, startTime + 0.015);
+		gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+		oscillator.connect(filter);
+		filter.connect(gain);
+		gain.connect(audioContext.destination);
+		oscillator.start(startTime);
+		oscillator.stop(startTime + duration);
+	}
+
 	function playAlertSound() {
 		if (!audioContext) return;
 		try {
-			const oscillator = audioContext.createOscillator();
-			const filter = audioContext.createBiquadFilter();
-			const gain = audioContext.createGain();
 			const now = audioContext.currentTime;
-			const duration = 0.28;
-
-			oscillator.type = 'sawtooth';
-			oscillator.frequency.setValueAtTime(480, now);
-			oscillator.frequency.exponentialRampToValueAtTime(170, now + duration);
-			filter.type = 'bandpass';
-			filter.frequency.setValueAtTime(1100, now);
-			filter.frequency.exponentialRampToValueAtTime(600, now + duration);
-			filter.Q.setValueAtTime(1.4, now);
-			gain.gain.setValueAtTime(0.0001, now);
-			gain.gain.exponentialRampToValueAtTime(0.3, now + 0.015);
-			gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
-			oscillator.connect(filter);
-			filter.connect(gain);
-			gain.connect(audioContext.destination);
-			oscillator.start(now);
-			oscillator.stop(now + duration);
+			const gap = 0.35;
+			playBeep(now);
+			playBeep(now + gap);
+			playBeep(now + gap * 2);
 		} catch (error) {
 			console.error('[Travel Stock Watcher] Could not play alert sound.', error);
 		}
