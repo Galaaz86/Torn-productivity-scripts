@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Travel Stock Restock Watcher
 // @namespace    https://www.torn.com/
-// @version      1.0.0
+// @version      1.0.1
 // @description  Watch travel-shop items and flash and sound an alert when their stock returns
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -141,7 +141,7 @@
 		filter.frequency.exponentialRampToValueAtTime(600, startTime + duration);
 		filter.Q.setValueAtTime(1.4, startTime);
 		gain.gain.setValueAtTime(0.0001, startTime);
-		gain.gain.exponentialRampToValueAtTime(0.3, startTime + 0.015);
+		gain.gain.exponentialRampToValueAtTime(0.5, startTime + 0.015);
 		gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 		oscillator.connect(filter);
 		filter.connect(gain);
@@ -155,9 +155,9 @@
 		try {
 			const now = audioContext.currentTime;
 			const gap = 0.35;
-			playBeep(now);
-			playBeep(now + gap);
-			playBeep(now + gap * 2);
+			for (let beep = 0; beep < 5; beep++) {
+				playBeep(now + gap * beep);
+			}
 		} catch (error) {
 			console.error('[Travel Stock Watcher] Could not play alert sound.', error);
 		}
