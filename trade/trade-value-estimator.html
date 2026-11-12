@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Torn Trade Value Estimator</title>
+	<style>
+		:root {
+			color-scheme: dark;
+			font-family: "Segoe UI", Arial, sans-serif;
+			background: #1a1a1a;
+			color: #e0e0e0;
+		}
+
+		* { box-sizing: border-box; }
+
+		body { max-width: 1050px; margin: 0 auto; padding: 28px 18px 48px; }
+		h1 { margin: 0 0 8px; color: #e8c84a; font-size: 28px; }
+		p { line-height: 1.5; }
+		.intro { margin: 0 0 22px; color: #aaa; }
+		.panel { margin-bottom: 18px; padding: 18px; border: 1px solid #383838; border-radius: 9px; background: #242424; }
+		label { display: block; margin-bottom: 7px; color: #ddd; font-weight: 600; }
+		input, textarea {
+			width: 100%;
+			padding: 10px 12px;
+			border: 1px solid #4a4a4a;
+			border-radius: 6px;
+			background: #191919;
+			color: #eee;
+			font: inherit;
+		}
+		input:focus, textarea:focus { outline: 2px solid #b89f3c; outline-offset: 1px; }
+		textarea { min-height: 190px; resize: vertical; line-height: 1.5; }
+		.field { margin-bottom: 16px; }
+		.discount-input { max-width: 180px; }
+		.hint, .privacy { margin: 7px 0 0; color: #999; font-size: 13px; }
+		.privacy { padding: 10px 12px; border-left: 3px solid #6e8f65; background: #202820; }
+		button {
+			padding: 10px 17px;
+			border: 1px solid #d0b543;
+			border-radius: 6px;
+			background: #e8c84a;
+			color: #1a1a1a;
+			font: inherit;
+			font-weight: 700;
+			cursor: pointer;
+		}
+		button:hover { background: #f0d460; }
+		button:disabled { cursor: wait; opacity: .65; }
+		.status { min-height: 1.5em; margin: 12px 0 0; color: #aaa; }
+		.status.error { color: #ff8d8d; }
+		.status.success { color: #87d79a; }
+		.results { display: none; }
+		.summary { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 20px; margin-bottom: 12px; }
+		.total-label { color: #aaa; }
+		.total { color: #e8c84a; font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+		.coverage { color: #aaa; font-size: 13px; }
+		.table-wrap { overflow-x: auto; }
+		table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+		th, td { padding: 10px 12px; border-bottom: 1px solid #383838; text-align: left; }
+		th { color: #e8c84a; font-size: 12px; text-transform: uppercase; white-space: nowrap; }
+		.sort-button { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: inherit; text-transform: inherit; }
+		.sort-button:hover { background: none; color: #f0d460; }
+		.sort-indicator { display: inline-block; min-width: 1em; margin-left: 4px; color: #aaa; }
+		td.number, th.number { text-align: right; white-space: nowrap; }
+		tr.unpriced td { color: #999; }
+		.footnote { margin: 12px 0 0; color: #999; font-size: 13px; }
+
+		@media (max-width: 600px) {
+			body { padding: 20px 12px 36px; }
+			.panel { padding: 14px; }
+			th, td { padding: 9px 7px; }
+		}
+	</style>
+</head>
+<body>
+	<main>
+		<h1>Torn Trade Value Estimator</h1>
+		<p class="intro">Paste a Torn trade description to estimate the total value of its items using Torn's current item market-price data.</p>
+
+		<section class="panel" aria-label="Trade input">
+			<div class="field">
+				<label for="api-key">Torn API key (public access)</label>
+				<input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Enter your public access API key">
+				<p class="privacy">The key is sent directly to Torn's API for the item catalog request. This page does not store it or send it to any other service.</p>
+			</div>
+			<div class="field">
+				<label for="trade-text">Trade text</label>
+				<textarea id="trade-text" spellcheck="false" placeholder="Example: GothicIce added 1383x African Violet, 1x Bunch of Black Roses, 64x Lion Plushie to the trade."></textarea>
+				<p class="hint">The parser reads quantity-and-name pairs such as “1383x African Violet”. Unrecognized or unpriced items are shown separately rather than counted as zero.</p>
+			</div>
+			<div class="field">
+				<label for="discount">Buy price (% of market value)</label>
+				<input id="discount" class="discount-input" type="number" min="0" max="100" step="0.1" value="97">
+				<p class="hint">For example, 97% means paying 97% of market price. Discounted unit prices are rounded to the nearest dollar.</p>
+			</div>
+			<button id="estimate" type="button">Estimate trade value</button>
+			<p id="status" class="status" role="status" aria-live="polite"></p>
+		</section>
+
+		<section id="results" class="panel results" aria-label="Estimate results">
+			<div class="summary">
+				<div><div class="total-label">Estimated market total</div><div id="total" class="total">—</div></div>
+				<div><div id="discount-total-label" class="total-label">Estimated total at 97%</div><div id="discount-total" class="total">—</div></div>
+				<div id="coverage" class="coverage"></div>
+			</div>
+			<div class="table-wrap">
+				<table>
+					<thead>
+						<tr>
+							<th scope="col" data-sort="name"><button class="sort-button" type="button">Item<span class="sort-indicator" aria-hidden="true"></span></button></th>
+							<th scope="col" class="number" data-sort="quantity"><button class="sort-button" type="button">Quantity<span class="sort-indicator" aria-hidden="true"></span></button></th>
+							<th scope="col" class="number" data-sort="marketPrice"><button class="sort-button" type="button">Market price / unit<span class="sort-indicator" aria-hidden="true"></span></button></th>
+							<th scope="col" class="number" data-sort="marketTotal"><button class="sort-button" type="button">Estimated value<span class="sort-indicator" aria-hidden="true"></span></button></th>
+							<th scope="col" class="number" data-sort="discountPrice"><button class="sort-button" type="button">Discount price / unit<span class="sort-indicator" aria-hidden="true"></span></button></th>
+							<th scope="col" class="number" data-sort="discountTotal"><button class="sort-button" type="button">Discounted value<span class="sort-indicator" aria-hidden="true"></span></button></th>
+						</tr>
+					</thead>
+					<tbody id="results-body"></tbody>
+				</table>
+			</div>
+			<p class="footnote">This is an estimate based on Torn API item market-price values, not a guaranteed sale price or the total of current individual listings. Market values can change.</p>
+		</section>
+	</main>
+
+	<script>
+		'use strict';
+
+		const apiKeyInput = document.getElementById('api-key');
+		const tradeTextInput = document.getElementById('trade-text');
+		const discountInput = document.getElementById('discount');
+		const estimateButton = document.getElementById('estimate');
+		const statusElement = document.getElementById('status');
+		const resultsSection = document.getElementById('results');
+		const resultsBody = document.getElementById('results-body');
+		const totalElement = document.getElementById('total');
+		const discountTotalElement = document.getElementById('discount-total');
+		const discountTotalLabel = document.getElementById('discount-total-label');
+		const coverageElement = document.getElementById('coverage');
+		const sortHeaders = [...document.querySelectorAll('th[data-sort]')];
+		let resultRows = [];
+		let sortKey = 'name';
+		let sortDirection = 1;
+		const moneyFormat = new Intl.NumberFormat('en-US', {
+			style: 'currency',
+			currency: 'USD',
+			maximumFractionDigits: 0,
+		});
+		const quantityFormat = new Intl.NumberFormat('en-US');
+
+		function parseTrade(text) {
+			const items = new Map();
+			const pattern = /(\d[\d,]*)\s*x\s+(.+?)(?=,\s*\d[\d,]*\s*x\s+|\s+to (?:the|a) trade\b|[,;\n]|$)/gi;
+			let match;
+
+			while ((match = pattern.exec(text)) !== null) {
+				const quantity = Number(match[1].replace(/,/g, ''));
+				const name = match[2].trim().replace(/[.,;]+$/, '');
+				if (!Number.isSafeInteger(quantity) || quantity <= 0 || !name) continue;
+
+				const key = name.toLocaleLowerCase();
+				const existing = items.get(key);
+				if (existing) {
+					existing.quantity += quantity;
+				} else {
+					items.set(key, { name, quantity });
+				}
+			}
+
+			return [...items.values()];
+		}
+
+		function setStatus(message, kind = '') {
+			statusElement.textContent = message;
+			statusElement.className = `status${kind ? ` ${kind}` : ''}`;
+		}
+
+		function getMarketPrice(item) {
+			const price = item?.value?.market_price;
+			return Number.isSafeInteger(price) && price > 0 ? price : null;
+		}
+
+		function addCell(row, text, className = '') {
+			const cell = document.createElement('td');
+			cell.textContent = text;
+			if (className) cell.className = className;
+			row.appendChild(cell);
+		}
+
+		function renderRows() {
+			const discount = Number(discountInput.value) / 100;
+			const sortedRows = resultRows.map(item => ({
+				...item,
+				discountPrice: item.marketPrice === null ? null : Math.round(item.marketPrice * discount),
+				discountTotal: item.marketPrice === null ? null : Math.round(item.marketPrice * discount) * item.quantity,
+			})).sort((a, b) => {
+				const left = a[sortKey];
+				const right = b[sortKey];
+				if (left === null) return right === null ? 0 : 1;
+				if (right === null) return -1;
+				if (typeof left === 'string') return left.localeCompare(right) * sortDirection;
+				return (left - right) * sortDirection;
+			});
+			resultsBody.replaceChildren();
+
+			for (const item of sortedRows) {
+				const row = document.createElement('tr');
+				if (item.marketPrice === null) row.className = 'unpriced';
+				addCell(row, item.name);
+				addCell(row, quantityFormat.format(item.quantity), 'number');
+				addCell(row, item.marketPrice === null ? item.priceStatus : moneyFormat.format(item.marketPrice), 'number');
+				addCell(row, item.marketTotal === null ? '—' : moneyFormat.format(item.marketTotal), 'number');
+				addCell(row, item.marketPrice === null ? '—' : moneyFormat.format(Math.round(item.marketPrice * discount)), 'number');
+				addCell(row, item.marketTotal === null ? '—' : moneyFormat.format(Math.round(item.marketPrice * discount) * item.quantity), 'number');
+				resultsBody.appendChild(row);
+			}
+
+			const discountTotal = resultRows.reduce((sum, item) => {
+				return sum + (item.marketPrice === null ? 0 : Math.round(item.marketPrice * discount) * item.quantity);
+			}, 0);
+			discountTotalLabel.textContent = `Estimated total at ${discountInput.value}%`;
+			discountTotalElement.textContent = moneyFormat.format(discountTotal);
+			for (const header of sortHeaders) {
+				const active = header.dataset.sort === sortKey;
+				header.setAttribute('aria-sort', active ? (sortDirection === 1 ? 'ascending' : 'descending') : 'none');
+				header.querySelector('.sort-indicator').textContent = active ? (sortDirection === 1 ? '▲' : '▼') : '';
+			}
+		}
+
+		function renderResults(tradeItems, catalog) {
+			const byName = new Map();
+			for (const item of catalog) {
+				if (typeof item?.name === 'string') byName.set(item.name.trim().toLocaleLowerCase(), item);
+			}
+
+			let total = 0;
+			let pricedItems = 0;
+			resultRows = tradeItems.map(tradeItem => {
+				const marketItem = byName.get(tradeItem.name.toLocaleLowerCase());
+				const marketPrice = getMarketPrice(marketItem);
+				const marketTotal = marketPrice === null ? null : marketPrice * tradeItem.quantity;
+				if (marketPrice !== null) {
+					total += marketTotal;
+					pricedItems++;
+				}
+				return {
+					name: tradeItem.name,
+					quantity: tradeItem.quantity,
+					marketPrice,
+					marketTotal,
+					discountPrice: marketPrice,
+					discountTotal: marketTotal,
+					priceStatus: marketItem ? 'No market price' : 'Not in catalog',
+				};
+			});
+
+			totalElement.textContent = moneyFormat.format(total);
+			renderRows();
+			coverageElement.textContent = `${pricedItems} of ${tradeItems.length} item types priced`;
+			resultsSection.style.display = 'block';
+		}
+
+		async function estimate() {
+			const apiKey = apiKeyInput.value.trim();
+			const tradeItems = parseTrade(tradeTextInput.value);
+			const discount = Number(discountInput.value);
+			resultsSection.style.display = 'none';
+
+			if (discountInput.value === '' || !Number.isFinite(discount) || discount < 0 || discount > 100) {
+				setStatus('Discount must be a percentage from 0 to 100.', 'error');
+				return;
+			}
+			if (!apiKey) {
+				setStatus('Enter a Torn public access API key to retrieve current item prices.', 'error');
+				return;
+			}
+			if (tradeItems.length === 0) {
+				setStatus('No items found. Include at least one entry like “2x Item Name”.', 'error');
+				return;
+			}
+
+			estimateButton.disabled = true;
+			setStatus('Fetching the item catalog from Torn…');
+
+			try {
+				const url = new URL('https://api.torn.com/v2/torn/items');
+				url.searchParams.set('cat', 'All');
+				url.searchParams.set('key', apiKey);
+				const response = await fetch(url);
+				const payload = await response.json();
+
+				if (!response.ok || payload.error) {
+					const detail = payload.error?.error || `Torn API returned HTTP ${response.status}.`;
+					throw new Error(detail);
+				}
+				if (!Array.isArray(payload.items)) {
+					throw new Error('Torn returned an unexpected item catalog response.');
+				}
+
+				renderResults(tradeItems, payload.items);
+				const unpriced = tradeItems.length - resultRows.filter(item => item.marketPrice !== null).length;
+				setStatus(
+					unpriced ? `Estimate ready. ${unpriced} item type${unpriced === 1 ? ' is' : 's are'} not priced and excluded from the total.` : 'Estimate ready.',
+					unpriced ? '' : 'success',
+				);
+			} catch (error) {
+				console.error('[Torn Trade Value Estimator] Could not retrieve item prices.', error);
+				setStatus(`Could not retrieve prices: ${error.message} Check the API key and your connection, then try again.`, 'error');
+			} finally {
+				estimateButton.disabled = false;
+			}
+		}
+
+		for (const header of sortHeaders) {
+			header.querySelector('.sort-button').addEventListener('click', () => {
+				if (sortKey === header.dataset.sort) sortDirection *= -1;
+				else {
+					sortKey = header.dataset.sort;
+					sortDirection = 1;
+				}
+				renderRows();
+			});
+		}
+
+		discountInput.addEventListener('input', () => {
+			const value = Number(discountInput.value);
+			const valid = discountInput.value !== '' && Number.isFinite(value) && value >= 0 && value <= 100;
+			discountInput.setAttribute('aria-invalid', String(!valid));
+			if (valid && resultsSection.style.display === 'block') renderRows();
+		});
+
+		discountInput.addEventListener('change', () => {
+			const value = Number(discountInput.value);
+			if (discountInput.value === '' || !Number.isFinite(value) || value < 0 || value > 100) {
+				setStatus('Discount must be a percentage from 0 to 100.', 'error');
+			}
+		});
+
+		estimateButton.addEventListener('click', estimate);
+	</script>
+</body>
+</html>

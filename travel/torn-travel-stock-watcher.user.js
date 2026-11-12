@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Travel Stock Restock Watcher
 // @namespace    https://www.torn.com/
-// @version      1.0.1
+// @version      1.0.2
 // @description  Watch travel-shop items and flash and sound an alert when their stock returns
 // @author       Galaaz86 [4178341]
 // @license      MIT License
@@ -20,13 +20,14 @@
 
 	const STORAGE_KEY = 'TORN_TRAVEL_STOCK_WATCHER_ITEMS';
 	const stockByItem = new Map();
+	const alertingItems = new Set();
 	const watchedItems = loadWatchedItems();
 	let audioContext = null;
 
 	function prepareAudio() {
-		if (audioContext || !window.AudioContext) return;
+		if (!window.AudioContext) return;
 		try {
-			audioContext = new AudioContext();
+			if (!audioContext) audioContext = new AudioContext();
 			if (audioContext.state === 'suspended') {
 				audioContext.resume().catch(error => {
 					console.error('[Travel Stock Watcher] Could not enable alert sound.', error);
@@ -78,7 +79,7 @@
 				background: rgba(255, 0, 0, .55);
 				opacity: 0;
 				pointer-events: none !important;
-				animation: torn-stock-watch-pulse 1.2s ease-in-out;
+				animation: torn-stock-watch-pulse 1.2s ease-in-out infinite;
 			}
 			@keyframes torn-stock-watch-pulse {
 				0%, 100% { opacity: 0; }
@@ -152,27 +153,41 @@
 
 	function playAlertSound() {
 		if (!audioContext) return;
-		try {
+
+		function play() {
 			const now = audioContext.currentTime;
 			const gap = 0.35;
 			for (let beep = 0; beep < 5; beep++) {
 				playBeep(now + gap * beep);
 			}
+		}
+
+		try {
+			if (audioContext.state === 'suspended') {
+				audioContext.resume().then(play).catch(error => {
+					console.error('[Travel Stock Watcher] Could not play alert sound.', error);
+				});
+				return;
+			}
+			if (audioContext.state !== 'running') {
+				throw new Error(`Audio context is ${audioContext.state}.`);
+			}
+			play();
 		} catch (error) {
 			console.error('[Travel Stock Watcher] Could not play alert sound.', error);
 		}
 	}
 
 	function flashPage() {
-		let flash = document.querySelector('.torn-stock-watch-flash');
-		if (!flash) {
-			flash = document.createElement('div');
-			flash.className = 'torn-stock-watch-flash';
-			document.body.appendChild(flash);
-		}
-		flash.classList.remove('torn-stock-watch-flash');
-		void flash.offsetWidth;
-		flash.classList.add('torn-stock-watch-flash');
+		if (document.querySelector('.torn-stock-watch-flash')) return;
+		const flash = document.createElement('div');
+		flash.className = 'torn-stock-watch-flash';
+		document.body.appendChild(flash);
+	}
+
+	function stopAlert() {
+		alertingItems.clear();
+		document.querySelector('.torn-stock-watch-flash')?.remove();
 	}
 
 	function scanRows() {
@@ -191,8 +206,12 @@
 
 			const previousStock = stockByItem.get(itemKey);
 			if (previousStock === 0 && stock > 0 && watchedItems.has(itemKey)) {
+				alertingItems.add(itemKey);
 				flashPage();
 				playAlertSound();
+			}
+			if (stock === 0 && alertingItems.delete(itemKey) && alertingItems.size === 0) {
+				document.querySelector('.torn-stock-watch-flash')?.remove();
 			}
 			stockByItem.set(itemKey, stock);
 		});
@@ -200,6 +219,7 @@
 
 	addStyles();
 	document.addEventListener('pointerdown', prepareAudio, { once: true, capture: true });
+	document.addEventListener('click', stopAlert, true);
 	scanRows();
 	new MutationObserver(scanRows).observe(document.body, {
 		childList: true,

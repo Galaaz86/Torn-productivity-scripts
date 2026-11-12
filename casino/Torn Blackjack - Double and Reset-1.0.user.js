@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Torn Blackjack - Double and Reset
 // @namespace    https://www.torn.com/
-// @version      1.2.0
+// @version      1.3.0
 // @license      MIT License
-// @description  Sets a base, doubles the bet, and resets to the base.
+// @description  Sets a base, doubles or quintuples the bet, and resets to the base.
 // @match        https://www.torn.com/page.php?sid=blackjack*
 // @match        https://torn.com/page.php?sid=blackjack*
 // @grant        GM_getValue
@@ -132,6 +132,7 @@
 			<div class="grip" title="Drag">⋮⋮</div>
 			<button id="set" type="button" title="Set base value">Set</button>
 			<button id="double" type="button" title="Double the bet">x2</button>
+			<button id="quadruple" type="button" title="Multiply the bet by five">x5</button>
 			<button id="reset" type="button" title="Reset to base">Base</button>
 		</div>
 
@@ -326,7 +327,9 @@
 
 		const value = action === 'double'
 			? parseMoney(visible.value) * 2
-			: parseMoney(base.value);
+			: action === 'x5'
+				? parseMoney(visible.value) * 5
+				: parseMoney(base.value);
 
 		if (!Number.isSafeInteger(value) || value <= 0) {
 			message('The value must be a valid positive integer.', true);
@@ -381,6 +384,10 @@
 
 	panel.querySelector('#double').addEventListener(
 		'click', () => apply('double')
+	);
+
+	panel.querySelector('#quadruple').addEventListener(
+		'click', () => apply('x5')
 	);
 
 	panel.querySelector('#reset').addEventListener(
